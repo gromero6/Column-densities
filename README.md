@@ -1,1 +1,1 @@
-This code is a modified version of a code written by a past master student in the group, I'll use it to calculate column densities over lines of sight on a certain point inside a molecular cloud in the ISM
+Modifying a code written by a master student in physics to calculate the column densities along lines for sight inside a molecular cloud
