@@ -65,9 +65,8 @@ if len(sys.argv)>6:
     case              = str(sys.argv[2]) #ideal/amb
     num_file          = str(sys.argv[3]) 
     max_cycles        = int(sys.argv[4]) 
-    NeffOrStability   = str(sys.argv[5]) 
     try:
-        seed              = int(sys.argv[6])
+        seed              = int(sys.argv[5])
     except:
         seed            = 12345
 else:
@@ -75,7 +74,6 @@ else:
     case            = 'ideal'
     num_file        = '430'
     max_cycles      = 100
-    NeffOrStability =  'N' # S stability or N column densities
     seed            = 12345
 
 rloc = 10
@@ -283,18 +281,18 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     directions = np.tile(directions, (m, 1))  # Repeat directions for each point in x_init
 
     total_lines = m*d
-    line      = np.zeros((N+1,m,3)) # from N+1 elements to the double, since it propagates forward and backward
-    bfields   = np.zeros((N+1,m))
-    densities = np.zeros((N+1,m))
-    volumes   = np.zeros((N+1,m))
-    threshold = np.zeros((m,)).astype(int) # one value for each
+    line      = np.zeros((N+1, total_lines,3)) # from N+1 elements to the double, since it propagates forward and backward
+    bfields   = np.zeros((N+1, total_lines))
+    densities = np.zeros((N+1, total_lines))
+    volumes   = np.zeros((N+1, total_lines))
+    threshold = np.zeros((total_lines,)).astype(int) # one value for each
 
 
-    line_rev=np.zeros((N+1,m,3)) # from N+1 elements to the double, since it propagates forward and backward
-    bfields_rev = np.zeros((N+1,m))
-    densities_rev = np.zeros((N+1,m))
-    volumes_rev   = np.zeros((N+1,m))
-    threshold_rev = np.zeros((m,)).astype(int) # one value for each
+    line_rev=np.zeros((N+1,total_lines,3)) # from N+1 elements to the double, since it propagates forward and backward
+    bfields_rev = np.zeros((N+1,total_lines))
+    densities_rev = np.zeros((N+1,total_lines))
+    volumes_rev   = np.zeros((N+1,total_lines))
+    threshold_rev = np.zeros((total_lines,)).astype(int) # one value for each
 
     line[0,:,:]     = x_init
     line_rev[0,:,:] = x_init 
@@ -463,133 +461,9 @@ os.makedirs(new_folder, exist_ok=True)
 
 densthresh = 100
 
-if NeffOrStability == 'S':
-    # for line os sight with start in center
-    directions = fibonacci_sphere(max_cycles)
-    m = directions.shape[0]
-    x_init = np.zeros((m,3))
-    radius_vector, trajectory, magnetic_fields, numb_densities, volumes, radius_to_origin, threshold, col_energies = energies_get_along_lines(x_init, densthresh=1.0e+4)
-    m = magnetic_fields.shape[1]
-    eff_column_densities, energy_magnetic, energy_thermal, energy_grav, temperature = col_energies
 
-    np.savez(f"{new_folder}/DataBundle.npz",
-            positions=trajectory,
-            eff_column_densities=eff_column_densities,
-            numb_densities=numb_densities,
-            energy_magnetic=energy_magnetic,
-            energy_thermal=energy_thermal,
-            energy_grav=energy_grav,
-            temperature=temperature)
 
-    for i in range(m):
-
-        cut = threshold[i] - 1
-        eff_column = np.max(eff_column_densities[:, i])
-
-        non_zeroes = (energy_grav[1:cut, i] != 0.0)
-        
-        s = trajectory[1:cut, i]
-        n = numb_densities[1:cut, i]
-
-        ratio_m = energy_magnetic[1:cut, i]/ abs(energy_grav[1:cut, i])
-        ratio_t = energy_thermal[1:cut, i]  / abs(energy_grav[1:cut, i])
-        ratio_sum = ratio_m + ratio_t
-
-        mask = ratio_sum < 10
-    
-        static = np.where(mask == False)[0]  
-        if len(static) > 0:
-            static_value = static[0] 
-        else:
-            static_value = len(ratio_m) - 1
-
-        mosaic = [
-            ['A', 'B'],
-            ['C', 'C']
-        ]
-        fig, axs = plt.subplot_mosaic(mosaic, figsize=(12, 10), dpi=300)
-
-        # Plot Number Density
-        axs['A'].plot(s/AU_to_cm, n, linestyle="--", color="blue")
-        axs['A'].set_yscale('log')
-        axs['A'].set_xscale('log')
-        axs['A'].set_xlabel("s (AU) along LOS")
-        axs['A'].set_ylabel("Number Density $n_g(s)$")
-        axs['A'].set_title("Number Density Along LOS")
-        axs['A'].grid(True)
-
-        # Plot Energy Ratios
-        axs['B'].plot(s/AU_to_cm, ratio_m, linestyle="--", color="red", label="Magnetic / Gravity")
-        axs['B'].plot(s/AU_to_cm, ratio_t, linestyle="--", color="green", label="Thermal / Gravity")
-        axs['B'].set_xscale('log')
-        axs['B'].set_yscale('log')
-        axs['B'].set_xlabel("s (AU) along LOS")
-        axs['B'].set_ylabel("Energy Ratios")
-        axs['B'].set_title("Energy Ratios Along Line of Sight")
-        axs['B'].legend()
-        axs['B'].grid(True)
-
-        # Table Data
-        table_data = [
-            ['---', 'Value', 'Note'],
-            ['Column Density (LOS)', f'{eff_column:.5e}', '-'],
-            ['Steps in Simulation (LOS)', str(len(trajectory)), '-'],
-            ['Smallest Volume (LOS)', f'{np.max(volumes[:cut, i]):.3e}', '-'],
-            ['Biggest Volume (LOS)', f'{np.max(volumes[:cut, i]):.3e}', '-'],
-            ['Smallest Density (LOS)', f'{np.min(numb_densities[:cut, i]):.3e}', '-'],
-            ['Biggest Density (LOS)', f'{np.max(numb_densities[:cut, i]):.3e}', '-']
-        ]
-        table = axs['C'].table(cellText=table_data, loc='center', cellLoc='center', colWidths=[0.3, 0.3, 0.3])
-        axs['C'].axis('off')
-
-        np.savetxt(f"{new_folder}/table_{i}.txt", table_data, fmt="%s", delimiter="   ")
-        plt.tight_layout()
-        plt.savefig(f"{new_folder}/energy_ratios{i}.png", dpi=300)
-        plt.close(fig)
-
-        if False:
-                
-            from matplotlib import cm
-            from matplotlib.colors import Normalize
-
-            norm = Normalize(vmin=np.min(magnetic_fields), vmax=np.max(magnetic_fields))
-            cmap = cm.viridis
-
-            ax = plt.figure().add_subplot(projection='3d')
-            radius_vector /= 3.086e+18
-
-            for k in range(m):
-                x=radius_vector[:, k, 0]
-                y=radius_vector[:, k, 1]
-                z=radius_vector[:, k, 2]
-                
-                for l in range(len(x)):
-                    color = cmap(norm(magnetic_fields[l, k]))
-                    ax.plot(x[l:l+2], y[l:l+2], z[l:l+2], color=color,linewidth=0.3)
-
-                #ax.scatter(x_init[0], x_init[1], x_init[2], marker="v",color="m",s=10)
-                ax.scatter(x[0], y[0], z[0], marker="x",color="g",s=6)
-                ax.scatter(x[-1], y[-1], z[-1], marker="x", color="r",s=6)
-                    
-            radius_to_origin = np.sqrt(x**2 + y**2 + z**2)
-            zoom = np.max(radius_to_origin)
-            ax.set_xlim(-zoom,zoom)
-            ax.set_ylim(-zoom,zoom)
-            ax.set_zlim(-zoom,zoom)
-            ax.set_xlabel('x [Pc]')
-            ax.set_ylabel('y [Pc]')
-            ax.set_zlabel('z [Pc]')
-            ax.set_title('Magnetic field morphology')
-
-            # Add a colorbar
-            sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-            sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
-            cbar.set_label('Magnetic Field Strength')
-            plt.savefig(os.path.join(new_folder,f"FieldTopology{i}.png"), bbox_inches='tight')
-            plt.show()
-
-elif NeffOrStability == 'N':
+if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
     directions, abs_local_fields, local_densities, _ = find_points_and_get_fields(x_init, Bfield, Density, Density_grad, Pos, VoronoiPos)
     print('Directions provided by B field at point')
