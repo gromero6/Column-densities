@@ -193,20 +193,12 @@ directions =  '20' unit vectors evenly distributed in a unit sphere
 
 x_init = [
         [a,b,c],
-        [a,b,c],
-        [a,b,c],
         ]
 
 directions = [
         [d,e,f],
         [d,e,f],
         [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f]
         ]
 
 x_new = x_init + dx*directions
@@ -216,15 +208,12 @@ x_init = [
         [a1,b1,c1],
         [a1,b1,c1],
         [a1,b1,c1],
-        [a1,b1,c1],
-        ...
-        [a1,b1,c1], <= 9th repetition
         [a2,b2,c2],
-        ...
-        [a2,b2,c2], <= 9th repetition
+        [a2,b2,c2],
+        [a2,b2,c2],
         [a3,b3,c3], 
-        ...
-        [a3,b3,c3], <= 9th repetition
+        [a3,b3,c3],
+        [a3,b3,c3],
         ]
 
 size of directions has to increade from its original size times the size of x_init        
@@ -232,32 +221,14 @@ directions = [
         [d,e,f],
         [d,e,f],
         [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f]  <= add up to the first starting position in x_init (its repeated)
         ...
         [d,e,f],
         [d,e,f],
         [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f]
         ...
         [d,e,f],
         [d,e,f],
         [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        [d,e,f]
         ]
 
 x_new = x_init + dx*directions
@@ -465,7 +436,7 @@ densthresh = 100
 
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
-    directions, abs_local_fields, local_densities, _ = find_points_and_get_fields(x_init, Bfield, Density, Density_grad, Pos, VoronoiPos)
+    directions = fibonacci_sphere()
     print('Directions provided by B field at point')
     radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions)
     threshold, threshold_rev = th
