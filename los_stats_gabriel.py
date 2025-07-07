@@ -114,7 +114,7 @@ time_value_array = np.array(time_value)
 
 file_list = glob.glob(f'snap_430.hdf5')
 filename = None
-
+total_lines = 0
 for f in file_list:
     if num_file in f:
         filename = f
@@ -122,7 +122,7 @@ if filename == None:
     raise FileNotFoundError
 snap = filename.split(".")[0][-3:]
 
-new_folder = os.path.join(f"thesis_los/{NeffOrStability}/{case}" , snap)
+new_folder = os.path.join(f"thesis_los/{case}" , snap)
 os.makedirs(new_folder, exist_ok=True)
 
 data = h5py.File(filename, 'r')
