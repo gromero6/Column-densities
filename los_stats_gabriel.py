@@ -114,7 +114,7 @@ time_value_array = np.array(time_value)
 
 file_list = glob.glob(f'snap_430.hdf5')
 filename = None
-total_lines = 0
+
 for f in file_list:
     if num_file in f:
         filename = f
@@ -242,9 +242,6 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     """
     directions = directions/np.linalg.norm(directions, axis=1)[:, np.newaxis]
     dx = 0.5
-    m = x_init.shape[0] # number of target points
-    d = directions.shape[0] # number of directions
-
 
     #expand arrays
 
@@ -437,6 +434,9 @@ densthresh = 100
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
     directions = fibonacci_sphere()
+    m = x_init.shape[0] # number of target points
+    d = directions.shape[0] # number of directions
+    total_lines = m*d
     print('Directions provided by B field at point')
     radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions)
     threshold, threshold_rev = th
