@@ -122,7 +122,7 @@ if filename == None:
     raise FileNotFoundError
 snap = filename.split(".")[0][-3:]
 
-new_folder = os.path.join(f"thesis_los/{NeffOrStability}/{case}" , snap)
+new_folder = os.path.join(f"thesis_los/{case}" , snap)
 os.makedirs(new_folder, exist_ok=True)
 
 data = h5py.File(filename, 'r')
@@ -250,6 +250,7 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
 
     x_init = np.repeat(x_init, d, axis=0)
     directions = np.tile(directions, (m, 1))  # Repeat directions for each point in x_init
+
 
     total_lines = m*d
     line      = np.zeros((N+1, total_lines,3)) # from N+1 elements to the double, since it propagates forward and backward
@@ -437,6 +438,7 @@ densthresh = 100
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
     directions = fibonacci_sphere()
+    
     print('Directions provided by B field at point')
     radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions)
     threshold, threshold_rev = th
