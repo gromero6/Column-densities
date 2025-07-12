@@ -242,9 +242,6 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     """
     directions = directions/np.linalg.norm(directions, axis=1)[:, np.newaxis]
     dx = 0.5
-    m = x_init.shape[0] # number of target points
-    d = directions.shape[0] # number of directions
-
 
     #expand arrays
 
@@ -438,16 +435,27 @@ densthresh = 100
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
     directions = fibonacci_sphere()
+<<<<<<< HEAD
     
     print('Directions provided by B field at point')
+=======
+    m = x_init.shape[0] # number of target points
+    d = directions.shape[0] # number of directions
+    total_lines = m*d
+    
+    
+    print('Directions provided by the LOS at points')
+>>>>>>> 1a277ca7d32ec134caf5a24946d4e40c5492a383
     radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions)
     threshold, threshold_rev = th
-    np.savez(os.path.join(new_folder, f"DataBundle{seed}.npz"),
-            thresholds=threshold,
-            thresholds_rev=threshold_rev,
-            column_densities=column,
-            positions=radius_vector,
-            number_densities=numb_densities)
+
+    column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
+    mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
+    np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_{seed}.npz"),
+        mean_column_densities=mean_column_per_point,
+        x_init_points=x_init,
+        snapshot_number=int(num_file) 
+        )
+
 
 print(total_lines, "lines of sight generated for all points")
-
