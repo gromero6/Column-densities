@@ -76,7 +76,7 @@ else:
     max_cycles      = 100
     seed            = 12345
 
-rloc = 10
+rloc = .10
 
 if case == 'ideal':
     subdirectory = 'ideal_mhd'
@@ -435,17 +435,15 @@ densthresh = 100
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
     directions = fibonacci_sphere()
-<<<<<<< HEAD
-    
-    print('Directions provided by B field at point')
-=======
     m = x_init.shape[0] # number of target points
     d = directions.shape[0] # number of directions
     total_lines = m*d
     
-    
+    print(total_lines, "lines of sight generated for all points")
+    print("No. of starting positions:", x_init.shape)
+    print("No. of directions:", directions.shape)
     print('Directions provided by the LOS at points')
->>>>>>> 1a277ca7d32ec134caf5a24946d4e40c5492a383
+
     radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions)
     threshold, threshold_rev = th
 
@@ -458,4 +456,3 @@ if __name__=='__main__':
         )
 
 
-print(total_lines, "lines of sight generated for all points")
