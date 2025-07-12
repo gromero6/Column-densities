@@ -187,54 +187,6 @@ def generate_vectors_in_core(max_cycles, densthresh, rloc=1.0, seed=12345):
     return valid_vectors[random_indices]
 
 
-"""
-x_init =  'm' number of 3D vectors
-directions =  '20' unit vectors evenly distributed in a unit sphere
-
-x_init = [
-        [a,b,c],
-        ]
-
-directions = [
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        ]
-
-x_new = x_init + dx*directions
-
-size of x_ init has to increade from its original size times the size of directions
-x_init = [
-        [a1,b1,c1],
-        [a1,b1,c1],
-        [a1,b1,c1],
-        [a2,b2,c2],
-        [a2,b2,c2],
-        [a2,b2,c2],
-        [a3,b3,c3], 
-        [a3,b3,c3],
-        [a3,b3,c3],
-        ]
-
-size of directions has to increade from its original size times the size of x_init        
-directions = [
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        ...
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        ...
-        [d,e,f],
-        [d,e,f],
-        [d,e,f],
-        ]
-
-x_new = x_init + dx*directions
-
-"""
-
 def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     """
     Default density threshold is 10 cm^-3  but saves index for both 10 and 100 boundary. 
@@ -450,6 +402,8 @@ if __name__=='__main__':
     column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
     mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
     np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_{seed}.npz"),
+        densities = numb_densities,
+        positions = radius_vector, 
         mean_column_densities=mean_column_per_point,
         x_init_points=x_init,
         snapshot_number=int(num_file) 
