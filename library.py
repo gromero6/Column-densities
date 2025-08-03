@@ -56,8 +56,17 @@ def get_density_at_points(x, Density, Density_grad, rel_pos):
 		local_densities[i] = Density[i] + np.dot(Density_grad[i,:], rel_pos[i,:])
 	return local_densities
 
+#cache-ing spatial.KDTree(Pos[:]).query(x, k=1, workers=-1)
+_cached_tree = None
+_cached_pos = None
+
 def find_points_and_relative_positions(x, Pos, VoronoiPos):
-    dist, cells = spatial.KDTree(Pos[:]).query(x, k=1, workers=-1)
+    global _cached_tree, _cached_pos
+    if _cached_tree is None or not np.array_equal(Pos, _cached_pos):
+        _cached_tree = cKDTree(Pos)
+        _cached_pos  = Pos.copy()
+    
+    dist, cells = _cached_tree.query(x, k=1, workers =− 1)
     rel_pos = VoronoiPos[cells] - x
     return dist, cells, rel_pos
 
