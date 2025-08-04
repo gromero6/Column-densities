@@ -73,10 +73,10 @@ else:
     N               = 2_000
     case            = 'ideal'
     num_file        = '430'
-    max_cycles      = 100
+    max_cycles      = 500
     seed            = 12345
 
-rloc = .10
+rloc = 0.1 # radius of the sphere in which the points are generated
 
 if case == 'ideal':
     subdirectory = 'ideal_mhd'
@@ -386,7 +386,7 @@ densthresh = 100
 
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
-    directions = fibonacci_sphere()
+    directions = fibonacci_sphere(10)
     m = x_init.shape[0] # number of target points
     d = directions.shape[0] # number of directions
     total_lines = m*d
