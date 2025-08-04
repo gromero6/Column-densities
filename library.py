@@ -66,7 +66,7 @@ def find_points_and_relative_positions(x, Pos, VoronoiPos):
         _cached_tree = cKDTree(Pos)
         _cached_pos  = Pos.copy()
     
-    dist, cells = _cached_tree.query(x, k=1, workers =− 1)
+    dist, cells = _cached_tree.query(x, k=1, workers =- 1)
     rel_pos = VoronoiPos[cells] - x
     return dist, cells, rel_pos
 
