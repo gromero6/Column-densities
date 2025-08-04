@@ -357,14 +357,14 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
         
         for k in range(1, radius_vector.shape[0]):  # Start from k = 1 to avoid indexing errors            
             cur = radius_vector[k, _n, :]
-            diff_rj_ri = magnitude(cur - prev)  # Vector subtraction before calculating magnitude
+            diff_rj_ri = magnitude(cur - prev) * pc_to_cm # Vector subtraction before calculating magnitude in cm
 
             trajectory[k, _n] = trajectory[k-1, _n] + diff_rj_ri            
             column[k, _n] = column[k-1, _n] + numb_densities[k, _n] * diff_rj_ri            
             
             prev = cur  # Store current point as previous point
 
-    trajectory      *= 1.0#pc_to_cm #* 3.086e+18                                # from Parsec to cm
+    #trajectory      *= pc_to_cm #* 3.086e+18                                # from Parsec to cm
 
     return radius_vector, trajectory, numb_densities, [threshold, threshold_rev], column
 
