@@ -3,6 +3,7 @@ import numpy as np, h5py
 from scipy import spatial
 import matplotlib.pyplot as plt
 from library import *
+from scipy.spatial import cKDTree
 
 start_time = time.time()
 
@@ -20,7 +21,16 @@ def get_density_at_points(x, Density, Density_grad, rel_pos):
 		local_densities[i] = Density[i] + np.dot(Density_grad[i,:], rel_pos[i,:])
 	return local_densities
 
+# cache-ing spatial.cKDTree(Pos[:]).query(x, k=1)
+_cached_tree = None
+_cached_pos = None
+
 def find_points_and_relative_positions(x, Pos, VoronoiPos):
+    global _cached_tree, _cached_pos
+    if _cached_tree is None or not np.array_equal(Pos, _cached_pos):
+        _cached_tree = cKDTree(Pos)
+        _cached_pos = Pos.copy()
+    
     dist, cells = spatial.KDTree(Pos[:]).query(x, k=1)
     rel_pos = VoronoiPos[cells] - x
     return dist, cells, rel_pos
@@ -369,6 +379,8 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     return radius_vector, trajectory, numb_densities, [threshold, threshold_rev], column
 
 
+print("Simulation Parameters:")
+print("Case               : ", case)
 print("Steps in Simulation: ", N)
 print("Boxsize            : ", Boxsize)
 print("Smallest Volume    : ", Volume[np.argmin(Volume)])
