@@ -410,23 +410,23 @@ def get_B_field_column_density(
 
         #foward path
         for i in range(N//2):
-            # FIX: Wrap the 1D 'current_fwd' into a 2D array for the function call
+            
             _, _, local_densities_fwd_arr, _ = find_points_and_get_fields(
                 np.array([current_fwd]), Bfield, Density, Density_grad, Pos, VoronoiPos
             )
-            # FIX: Unpack the scalar result from the returned 1-element array
+            
             local_densities_fwd = local_densities_fwd_arr[0]
 
             local_densities_fwd *= gr_cm3_to_nuclei_cm3
             if local_densities_fwd < densthresh:
                 break
             
-            # FIX: Heun_step also expects a 2D array for x and a 1D array for dx
+           
             dx_arr = np.array([dx])
             next_fwd_arr, _, _, _, _, _ = Heun_step(
                 np.array([current_fwd]), dx_arr, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
             )
-            # FIX: Unpack the vector from the returned (1, 3) array
+            
             next_fwd = next_fwd_arr[0]
 
             distance_traveled_fwd = np.linalg.norm(next_fwd - current_fwd) * pc_to_cm
@@ -435,7 +435,7 @@ def get_B_field_column_density(
 
         # backward path
         for i in range(N//2):
-            # FIX: Apply the same wrapping and unpacking for the backward path
+        
             _, _, local_densities_bck_arr, _ = find_points_and_get_fields(
                 np.array([current_bck]), Bfield, Density, Density_grad, Pos, VoronoiPos
             )
