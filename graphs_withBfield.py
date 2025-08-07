@@ -8,9 +8,8 @@ from los_stats_gabriel_field import seed, m, d
 data = np.load(f"thesis_los\ideal\430\DataBundle_MeanCDandBCD_{seed}_{m}_{d}.npz")
 
 print(data.files)
-folder_name = "N vs r plots"
-file_name = "ColumnDensity_vs_RadialDistance.png"
-
+output_folder = ".\Column-densities\graphs"
+file_name = f"LOSandBcolumndensities_vs_RadialDistance_{seed}_{m}_{d}.png"
 
 x_init = data['x_init_points']
 mean_CD = data['mean_column_densities']
@@ -33,3 +32,4 @@ plt.title('Column Density vs. Distance', fontsize=16)
 
 plt.show()
 
+full_path = os.path.join(output_folder, file_name)
