@@ -3,8 +3,9 @@ import numpy as np, h5py
 from scipy import spatial
 import matplotlib.pyplot as plt
 from library import *
+from los_stats_gabriel_field import seed, m, d
 
-data = np.load(r"thesis_los\ideal\430\DataBundle_MeanCD_12345.npz")
+data = np.load(f"thesis_los\ideal\430\DataBundle_MeanCDandBCD_{seed}_{m}_{d}.npz")
 
 print(data.files)
 folder_name = "N vs r plots"
