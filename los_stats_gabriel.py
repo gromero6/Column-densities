@@ -3,7 +3,7 @@ import numpy as np, h5py
 from scipy import spatial
 import matplotlib.pyplot as plt
 from library import *
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 
 start_time = time.time()
 
@@ -28,10 +28,10 @@ _cached_pos = None
 def find_points_and_relative_positions(x, Pos, VoronoiPos):
     global _cached_tree, _cached_pos
     if _cached_tree is None or not np.array_equal(Pos, _cached_pos):
-        _cached_tree = cKDTree(Pos)
+        _cached_tree = KDTree(Pos)
         _cached_pos = Pos.copy()
     
-    dist, cells = spatial.KDTree(Pos[:]).query(x, k=1)
+    dist, cells = _cached_tree.query(x, k=1, workers=-1)
     rel_pos = VoronoiPos[cells] - x
     return dist, cells, rel_pos
 
@@ -80,7 +80,7 @@ if len(sys.argv)>6:
     except:
         seed            = 12345
 else:
-    N               = 2_000
+    N               = 2000
     case            = 'ideal'
     num_file        = '430'
     max_cycles      = 500
@@ -418,7 +418,7 @@ if __name__=='__main__':
         positions = radius_vector, 
         mean_column_densities=mean_column_per_point,
         x_init_points=x_init,
-        snapshot_number=int(num_file) 
+        snapshot_number=int(num_file),
         )
 
 
