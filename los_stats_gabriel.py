@@ -83,7 +83,7 @@ else:
     N               = 2000
     case            = 'ideal'
     num_file        = '430'
-    max_cycles      = 500
+    max_cycles      = 100
     seed            = 12345
 
 rloc = 0.1 # radius of the sphere in which the points are generated
