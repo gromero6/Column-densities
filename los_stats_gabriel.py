@@ -112,8 +112,8 @@ for f in file_list:
 if filename == None:
     raise FileNotFoundError
 
-file_path = f'.\{case}_cloud_trajectory.txt'
-clouds_file_path = f'.\clouds\{case}_clouds.txt'
+file_path = os.path.join(".", f"{case}_cloud_trajectory.txt")
+clouds_file_path = os.path.join("clouds", f"{case}_clouds.txt")
 
 snap = []
 time_value = []
@@ -129,7 +129,7 @@ if filename == None:
     raise FileNotFoundError
 snap = filename.split(".")[0][-3:]
 
-new_folder = os.path.join(f"thesis_los/{case}" , snap)
+new_folder = os.path.join("thesis_los" , case, snap)
 os.makedirs(new_folder, exist_ok=True)
 
 data = h5py.File(filename, 'r')
@@ -437,7 +437,7 @@ if __name__=='__main__':
 
     column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
     mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
-    np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_{seed}_{m}_{d}.npz"),
+    np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_{seed}_{m}_{d}_{cloud_index}.npz"),
         densities = numb_densities,
         positions = radius_vector, 
         mean_column_densities=mean_column_per_point,
