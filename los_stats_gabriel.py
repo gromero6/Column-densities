@@ -70,21 +70,28 @@ S : Stability
 N : Column densities
 
 """
-if len(sys.argv)>6:
+if len(sys.argv)>7:
     N                 = int(sys.argv[1])
     case              = str(sys.argv[2]) #ideal/amb
     num_file          = str(sys.argv[3]) 
-    max_cycles        = int(sys.argv[4]) 
+    max_cycles        = int(sys.argv[4])
+    nd                = int(sys.argv[5])
+    cloud_index       = int(sys.argv[6])
+    manual_cloud      = True
     try:
-        seed              = int(sys.argv[5])
+        seed              = int(sys.argv[7])
     except:
         seed            = 12345
+    
+
 else:
     N               = 2000
     case            = 'ideal'
     num_file        = '430'
     max_cycles      = 100
+    nd              = 10
     seed            = 12345
+    manual_cloud    = False
 
 rloc = 0.1 # radius of the sphere in which the points are generated
 
@@ -105,22 +112,12 @@ for f in file_list:
 if filename == None:
     raise FileNotFoundError
 
-file_path = f'./{case}_cloud_trajectory.txt'
+file_path = f'.\{case}_cloud_trajectory.txt'
+clouds_file_path = f'.\clouds\{case}_clouds.txt'
 
 snap = []
 time_value = []
 
-with open(file_path, mode='r') as file:
-    csv_reader = csv.reader(file)  # Use csv.reader to access rows directly
-    next(csv_reader)  # Skip the header row
-    for row in csv_reader:
-        snap.append(int(row[0]))  # First column is snap
-        time_value.append(float(row[1]))  # Second column is time_value
-        if num_file == str(row[0]):
-            Center = np.array([float(row[2]),float(row[3]),float(row[4])])
-
-snap_array = np.array(snap)
-time_value_array = np.array(time_value)
 
 file_list = glob.glob(f'snap_430.hdf5')
 filename = None
@@ -155,15 +152,42 @@ print(filename, "Loaded (1) :=: time ", (time.time()-start_time)/60.)
 snap = []
 time_value = []
 
-with open(file_path, mode='r') as file:
-    csv_reader = csv.reader(file)
-    next(csv_reader)
-    for row in csv_reader:
-        if num_file == str(row[0]):
-            Center = np.array([float(row[2]),float(row[3]),float(row[4])])
-            snap =str(row[0])
-            time_value = float(row[1])
-            peak_den =  float(row[5])
+if manual_cloud is True:
+    with open(clouds_file_path, mode='r') as file:
+        csv_reader = csv.DictReader(file)
+        found = False
+        for row in csv_reader:
+            if int(row["snap"]) == int(int(num_file)) and int(row["index"]) == cloud_index:
+                Center = np.array([float(row["CloudCord_X"]), float(row["CloudCord_Y"]), float(row["CloudCord_Z"])])
+                snap = str(row["snap"])
+                peak_den = float(row["Peak_Density"])
+                found = True
+                break
+        if not found:
+            raise ValueError(f"Cloud with index {cloud_index} was not found")
+    with open(file_path, mode = "r") as file:
+        csv_reader = csv.DictReader(file)
+        found = False
+        for row in csv_reader:
+            if int(row["snap"]) == int(num_file):
+                time_value = float(row["time_value"])
+                found = True
+                break
+        if not found:
+            raise ValueError(f"Snapshot {num_file} was not found in the trajectory file")
+        
+else:
+    with open(file_path, mode='r') as file:
+        csv_reader = csv.reader(file)
+        next(csv_reader)
+        for row in csv_reader:
+            if num_file == str(row[0]):
+                Center = np.array([float(row[2]),float(row[3]),float(row[4])])
+                snap =str(row[0])
+                time_value = float(row[1])
+                peak_den =  float(row[5])
+            break
+            
 
 CloudCord = Center.copy()
 
@@ -180,10 +204,10 @@ for dim in range(3):  # Loop over x, y, z
 
 def generate_vectors_in_core(max_cycles, densthresh, rloc=1.0, seed=12345):
     import numpy as np
-    from scipy.spatial import cKDTree
+    from scipy.spatial import KDTree
     np.random.seed(seed)
     valid_vectors = []
-    tree = cKDTree(Pos)
+    tree = KDTree(Pos)
     while len(valid_vectors) < max_cycles:
         points = np.random.uniform(low=-rloc, high=rloc, size=(max_cycles, 3))
         distances = np.linalg.norm(points, axis=1)
@@ -240,7 +264,7 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     mask  = dens > 100# 1 if not finished
     un_masked = np.logical_not(mask) # 1 if finished
 
-    while np.any(mask):
+    while np.any(mask) and k < N:
 
         mask = dens > 100  # True if continue
         un_masked = np.logical_not(mask)
@@ -299,7 +323,7 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
     mask_rev = dens > 100
     un_masked_rev = np.logical_not(mask_rev)
 
-    while np.any((mask_rev)):
+    while np.any((mask_rev)) and k < N:
 
         mask_rev = dens > 100  # True if continue
         un_masked_rev = np.logical_not(mask_rev)
@@ -398,7 +422,7 @@ densthresh = 100
 
 if __name__=='__main__':
     x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
-    directions = fibonacci_sphere(10)
+    directions = fibonacci_sphere(nd)
     m = x_init.shape[0] # number of target points
     d = directions.shape[0] # number of directions
     total_lines = m*d
