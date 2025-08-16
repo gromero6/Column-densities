@@ -70,19 +70,16 @@ S : Stability
 N : Column densities
 
 """
-if len(sys.argv)>7:
+if len(sys.argv)>6: 
     N                 = int(sys.argv[1])
     case              = str(sys.argv[2]) #ideal/amb
     num_file          = str(sys.argv[3]) 
-    max_cycles        = int(sys.argv[4])
-    nd                = int(sys.argv[5])
-    manual_cloud      = True
+    max_cycles        = int(sys.argv[4]) #numero de puntos
+    nd                = int(sys.argv[5]) #numero de direcciónes 
     try:
-        seed              = int(sys.argv[7])
+        seed              = int(sys.argv[6])
     except:
         seed            = 12345
-    
-
 else:
     N               = 2000
     case            = 'ideal'
@@ -90,7 +87,6 @@ else:
     max_cycles      = 100
     nd              = 10
     seed            = 12345
-    manual_cloud    = False
 
 rloc = 0.1 # radius of the sphere in which the points are generated
 
@@ -151,50 +147,21 @@ print(filename, "Loaded (1) :=: time ", (time.time()-start_time)/60.)
 snap = []
 time_value = []
 
-def clouds_sum(clouds_file_path):
-    num_clouds = 0
-    try:
-        with open(clouds_file_path, "r") as f:
-            num_clouds = sum(1 for line in f)
-        return num_clouds
-    except FileNotFoundError:
-        print("File not found")
-        return 0
+def clouds_center(clouds_file_path, num_file):
+    centers_list = []
+    found = False
+    with open(clouds_file_path, mode='r') as file:
+        csv_reader = csv.DictReader(file)
+        for row in csv_reader:
+            if int(row["snap"]) == int(num_file):
+                centers_list.append([float(row["CloudCord_X"]), float(row["CloudCord_Y"]), float(row["CloudCord_Z"])])
+                found = True
+    if not found:
+        raise ValueError(f"No clouds found for snapshot {num_file}")
+    
+    return np.array(centers_list)
 
-num_clouds = clouds_sum(clouds_file_path)
-centers       = np.zeros(num_clouds, 3)
-snaps         = np.zeros(num_clouds)
-peakdensities = np.zeros(num_clouds)
-
-def clouds_center(clouds_file_path, file_path):
-    if manual_cloud is True:
-        with open(clouds_file_path, mode='r') as file:
-            csv_reader = csv.DictReader(file)
-            for row in csv_reader:
-                centers[row]        = np.array([float(row["CloudCord_X"]), float(row["CloudCord_Y"]), float(row["CloudCord_Z"])])
-                snaps[row]         = str(row["snap"])
-                peakdensities[row] = float(row["Peak_Density"])
-
-            
-    else:
-        with open(file_path, mode='r') as file:
-            csv_reader = csv.reader(file)
-            next(csv_reader)
-            for row in csv_reader:
-                if num_file == str(row[0]):
-                    Center = np.array([float(row[2]),float(row[3]),float(row[4])])
-                    snap =str(row[0])
-                    peak_den =  float(row[5])
-                break
-                
-
-    CloudCord = centers.copy()
-
-    print("Centers before Centering", centers)
-    return CloudCord, centers
-
-
-def generate_vectors_in_core(max_cycles, densthresh, rloc=1.0, seed=12345):
+def generate_vectors_in_core(max_cycles, densthresh, Pos, rloc=1.0, seed=12345):
     import numpy as np
     from scipy.spatial import KDTree
     np.random.seed(seed)
@@ -213,7 +180,7 @@ def generate_vectors_in_core(max_cycles, densthresh, rloc=1.0, seed=12345):
     return valid_vectors[random_indices]
 
 
-def get_line_of_sight(x_init=None, directions=fibonacci_sphere()):
+def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, VoronoiPos=None):
     """
     Default density threshold is 10 cm^-3  but saves index for both 10 and 100 boundary. 
     This way, all data is part of a comparison between 10 and 100 
@@ -411,35 +378,44 @@ os.makedirs(new_folder, exist_ok=True)
 densthresh = 100
 
 
-
 if __name__=='__main__':
-    i = 0
-    while i < num_clouds:
+    cloud_centers = clouds_center(clouds_file_path, num_file)
+    num_clouds = cloud_centers.shape[0]
+
+    for i in range(num_clouds):
     
-        x_init = generate_vectors_in_core(max_cycles, densthresh, rloc, seed)
+        Pos_copy = Pos.copy()
+        VoronoiPos_copy = VoronoiPos.copy()
+        
+        print("Centering on cloud:", i)
+        print("Coordinates:", cloud_centers[i])
+        
+        # create a copy for each cloud that it doesn't re-center previous coordinates
+        Pos_copy -= cloud_centers[i]
+        VoronoiPos_copy -= cloud_centers[i]
+
+        for dim in range(3):  # Loop over x, y, z
+            pos_from_center = Pos_copy[:, dim]
+            boundary_mask = pos_from_center > Boxsize / 2
+            Pos_copy[boundary_mask, dim] -= Boxsize
+            VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+            
+            boundary_mask = pos_from_center < -Boxsize / 2
+            Pos_copy[boundary_mask, dim] += Boxsize
+            VoronoiPos_copy[boundary_mask, dim] += Boxsize
+        
+        x_init = generate_vectors_in_core(max_cycles, densthresh, Pos_copy, rloc, seed)
         directions = fibonacci_sphere(nd)
         m = x_init.shape[0] # number of target points
         d = directions.shape[0] # number of directions
         total_lines = m*d
-
-
-
-        VoronoiPos-=CloudCord[i]
-        Pos-=CloudCord[i]
-
-
-        for dim in range(3):  # Loop over x, y, z
-            pos_from_center = Pos[:, dim]
-            boundary_mask = pos_from_center > Boxsize / 2
-            Pos[boundary_mask, dim] -= Boxsize
-            VoronoiPos[boundary_mask, dim] -= Boxsize
         
         print(total_lines, "lines of sight generated for all points")
         print("No. of starting positions:", x_init.shape)
         print("No. of directions:", directions.shape)
         print('Directions provided by the LOS at points')
 
-        radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions)
+        radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
         threshold, threshold_rev = th
 
         column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
@@ -451,5 +427,3 @@ if __name__=='__main__':
             x_init_points=x_init,
             snapshot_number=int(num_file),
             )
-        i += 1
-
