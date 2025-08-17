@@ -362,6 +362,92 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
     return radius_vector, trajectory, numb_densities, [threshold, threshold_rev], column
 
 
+def get_B_field_column_density(
+    x_init,
+    Bfield,
+    Density,
+    densthresh,
+    N,
+    max_cycles,
+    Density_grad,
+    Volume,
+    VoronoiPos,
+    Pos
+):
+    """
+    Calculates the column density over magnetic field lines for all x_init points
+    """
+    
+    BDtotal = np.zeros(max_cycles)
+    column_fwd = np.zeros(max_cycles)
+    column_bck = np.zeros(max_cycles)
+    current_fwd = x_init.copy()
+    current_bck = x_init.copy()
+    
+    mask_fwd = np.ones(max_cycles, dtype=bool)
+    mask_bck = np.ones(max_cycles, dtype=bool)
+
+    for i in range(N):
+        if np.any(mask_fwd):
+            
+            # only for active mask poitns
+            active_fwd = current_fwd[mask_fwd]
+            
+            _, _, local_densities_fwd, _ = find_points_and_get_fields(
+                active_fwd, Bfield, Density, Density_grad, Pos, VoronoiPos
+            )
+            
+            local_densities_fwd *= gr_cm3_to_nuclei_cm3
+            new_mask_fwd = local_densities_fwd > densthresh
+
+            local_densities_fwd[~new_mask_fwd] = 0
+            
+            next_fwd, _, _, _, _, _ = Heun_step(
+                active_fwd, np.ones(len(active_fwd)) * 0.5, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
+            )
+
+            distance_traveled_fwd = np.linalg.norm(next_fwd - active_fwd, axis=1) * pc_to_cm
+
+            column_fwd[mask_fwd] += local_densities_fwd * distance_traveled_fwd
+            current_fwd[mask_fwd] = next_fwd
+
+            mask_fwd[mask_fwd] = new_mask_fwd
+        #backwards
+        if np.any(mask_bck):
+            
+    
+            active_bck = current_bck[mask_bck]
+            
+            _, _, local_densities_bck, _ = find_points_and_get_fields(
+                active_bck, Bfield, Density, Density_grad, Pos, VoronoiPos
+            )
+            
+            local_densities_bck *= gr_cm3_to_nuclei_cm3
+
+            # above threashhold
+            new_mask_bck = local_densities_bck > densthresh
+            
+            local_densities_bck[~new_mask_bck] = 0 #those that dont go above the threashold become zero
+            
+        
+            next_bck, _, _, _, _, _ = Heun_step(
+                active_bck, np.ones(len(active_bck)) * -0.5, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
+            )
+            
+            distance_traveled_bck = np.linalg.norm(next_bck - active_bck, axis=1) * pc_to_cm
+            
+            column_bck[mask_bck] += local_densities_bck * distance_traveled_bck
+            current_bck[mask_bck] = next_bck
+            
+            mask_bck[mask_bck] = new_mask_bck
+            
+        # if both masks false
+        if not np.any(mask_fwd) and not np.any(mask_bck):
+            break
+            
+    BDtotal = column_fwd + column_bck
+    return BDtotal
+
 print("Simulation Parameters:")
 print("Case               : ", case)
 print("Steps in Simulation: ", N)
@@ -418,12 +504,15 @@ if __name__=='__main__':
         radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
         threshold, threshold_rev = th
 
+        BDtotal = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+
         column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
         mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
-        np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_{seed}_{m}_{d}_{i}.npz"),
-            densities = numb_densities,
-            positions = radius_vector, 
-            mean_column_densities=mean_column_per_point,
-            x_init_points=x_init,
-            snapshot_number=int(num_file),
+        np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
+            densities             = numb_densities,
+            positions             = radius_vector, 
+            mean_column_densities = mean_column_per_point,
+            x_init_points         = x_init,
+            snapshot_number       = int(num_file),
+            pathcolumn            = BDtotal,
             )
