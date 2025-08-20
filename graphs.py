@@ -69,7 +69,7 @@ while i <16:
     plt.title('Column Density vs. Distance', fontsize=16)
 
     plt.grid(True, which="both", ls=":")
-    plt.ylim( (10e20, 10e28) )
+    plt.ylim( (10e20, 10e27) )
 
     full_path = os.path.join(output_folder, png_name)
     plt.savefig(full_path, dpi=300)
