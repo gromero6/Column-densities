@@ -14,9 +14,23 @@ snap  = input("Enter snapshot number: ")
 
 r_values_los  = []
 r_values_path = []
-i= 0
+
+coordirec = os.path.join("clouds")
+cornames  = f"{case}_clouds.txt"
+full_cord_path = os.path.join(coordirec, cornames)
+df = pd.read_csv(full_cord_path)
+
+i = 0
 while i <16:
 
+    cloud_data   = df.iloc[i]
+    cloud_number = cloud_data["index"]
+    peak_density = cloud_data["Peak_Density"]
+    x = cloud_data["CloudCord_X"]
+    y = cloud_data["CloudCord_Y"]
+    z = cloud_data["CloudCord_Z"]
+
+    data_coordinates = np.load
     data_directory = os.path.join("thesis_los", case, snap)
     data_name = f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"
     full_data_path = os.path.join(data_directory, data_name)
@@ -66,10 +80,18 @@ while i <16:
 
     plt.xlabel('$cm$', fontsize=14)
     plt.ylabel('$N (cm^{-2})$', fontsize=14)
-    plt.title('Column Density vs. Distance', fontsize=16)
+    
+    title_text = f"Column Density vs. Distance: Cloud {int(cloud_number)}"
+    plt.title(title_text, fontsize=16)
 
     plt.grid(True, which="both", ls=":")
     plt.ylim( (10e20, 10e27) )
+
+    info_text = (
+    f"Center Coordinates: ({x:.2f}, {y:.2f}, {z:.2f})\n"
+    f"Peak Density: {peak_density:.2f}"
+    )
+    plt.figtext(0.15, 0.02, info_text, fontsize=10, ha='left')
 
     full_path = os.path.join(output_folder, png_name)
     plt.savefig(full_path, dpi=300)
