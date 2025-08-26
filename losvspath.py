@@ -60,8 +60,6 @@ while i <16:
     plt.title(title_text, fontsize=16)
 
     plt.grid(True, which="both", ls=":")
-    plt.ylim( (10e20, 10e25) )
-    plt.xlim( (10e20, 10e27) )
 
     info_text = (
     f"Center Coordinates: ({x:.2f}, {y:.2f}, {z:.2f})\n"
