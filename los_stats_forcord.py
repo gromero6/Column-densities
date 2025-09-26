@@ -81,15 +81,16 @@ if len(sys.argv)>6:
     except:
         seed            = 12345
 else:
-    N               = 2000
-    case            = 'ideal'
-    num_file        = '430'
-    max_cycles      = 100
-    nd              = 10
+    N               = 2000 #number of steps
+    case            = 'ideal' #ideal or ambipolar
+    num_file        = '430' #snapshot number
+    max_cycles      = 100 # number of x init points generated
+    nd              = 10 #directions nunmber of LOS
     seed            = 12345
 
 rloc = 0.1 # radius of the sphere in which the points are generated
 
+#it searches for the directory, ideal or ambipolar
 if case == 'ideal':
     subdirectory = 'ideal_mhd'
 elif case == 'amb':
@@ -107,6 +108,7 @@ for f in file_list:
 if filename == None:
     raise FileNotFoundError
 
+#it looks for the path and file where the cloud trajectories are
 file_path = os.path.join(".", f"{case}_cloud_trajectory.txt")
 clouds_file_path = os.path.join("clouds", f"{case}_clouds.txt")
 
@@ -117,6 +119,7 @@ time_value = []
 file_list = glob.glob(f'snap_430.hdf5')
 filename = None
 
+#troubleshoots, if it doesn't fin the filename, it shows an error
 for f in file_list:
     if num_file in f:
         filename = f
@@ -124,13 +127,14 @@ if filename == None:
     raise FileNotFoundError
 snap = filename.split(".")[0][-3:]
 
+#creates the folder for the saved data
 new_folder = os.path.join("thesis_los" , case, snap)
 os.makedirs(new_folder, exist_ok=True)
 
 data = h5py.File(filename, 'r')
 Boxsize = data['Header'].attrs['BoxSize'] #
 
-# Directly convert and cast to desired dtype
+# Directly convert and cast to desired dtype into the arrays that the functions will use
 VoronoiPos = np.asarray(data['PartType0']['Coordinates'], dtype=FloatType)
 Pos = np.asarray(data['PartType0']['CenterOfMass'], dtype=FloatType)
 Bfield = np.asarray(data['PartType0']['MagneticField'], dtype=FloatType)
@@ -144,40 +148,43 @@ Volume   = Mass/Density
 
 print(filename, "Loaded (1) :=: time ", (time.time()-start_time)/60.)
 
+#not used in the code
 snap = []
 time_value = []
 
-def clouds_center(clouds_file_path, num_file):
-    centers_list = []
-    found = False
+#this function is used for finding the cloud center and defining it for each cloud coordinate do that the code can use it in the loop
+def clouds_center(clouds_file_path, num_file): #it takes as argument the file number and the path
+    centers_list = [] #initializes an empty array that will storage the centers
+    found = False #it works with a while loop that will stop when the bool "found" is true
     with open(clouds_file_path, mode='r') as file:
-        csv_reader = csv.DictReader(file)
+        csv_reader = csv.DictReader(file) #csv reader to read the file and look in it
         for row in csv_reader:
             if int(row["snap"]) == int(num_file):
-                centers_list.append([float(row["CloudCord_X"]), float(row["CloudCord_Y"]), float(row["CloudCord_Z"])])
+                centers_list.append([float(row["CloudCord_X"]), float(row["CloudCord_Y"]), float(row["CloudCord_Z"])]) #for each row it takes the cloud coordinate and appends it to the array (number of clouds vs 3 array)
                 found = True
     if not found:
         raise ValueError(f"No clouds found for snapshot {num_file}")
     
-    return np.array(centers_list)
+    return np.array(centers_list) #returns the list of centers
 
-def generate_vectors_in_core(max_cycles, densthresh, Pos, rloc=1.0, seed=12345):
+#this function generates vectors from the core to the part where the x init points will be generated, it uses the density threashold so that the x init points are not generated somwhere where the density is lower than the density threashold
+def generate_vectors_in_core(max_cycles, densthresh, Pos, rloc=1.0, seed=12345): 
     import numpy as np
     from scipy.spatial import KDTree
-    np.random.seed(seed)
-    valid_vectors = []
-    tree = KDTree(Pos)
-    while len(valid_vectors) < max_cycles:
-        points = np.random.uniform(low=-rloc, high=rloc, size=(max_cycles, 3))
-        distances = np.linalg.norm(points, axis=1)
-        inside_sphere = points[distances <= rloc]
-        _, nearest_indices = tree.query(inside_sphere)
-        valid_mask = Density[nearest_indices] * gr_cm3_to_nuclei_cm3 > densthresh
-        valid_points = inside_sphere[valid_mask]
-        valid_vectors.extend(valid_points)
-    valid_vectors = np.array(valid_vectors)
-    random_indices = np.random.choice(len(valid_vectors), max_cycles, replace=False)
-    return valid_vectors[random_indices]
+    np.random.seed(seed) #it uses the seed such that it generates the same vectors each run unless the seed changes
+    valid_vectors = [] 
+    tree = KDTree(Pos) #organizes the positions inside the cloud for a kdtree so that it's easy to seach for them 
+    while len(valid_vectors) < max_cycles: #it will operate while there's less valid vectors than points should be
+        points = np.random.uniform(low=-rloc, high=rloc, size=(max_cycles, 3)) #it generates points in a cube of side 2rloc 
+        distances = np.linalg.norm(points, axis=1) #finds the distance between the points and the center
+        inside_sphere = points[distances <= rloc] #to keep the points inside the sphere, it filters out the points whose distance is larger than the rloc (radius of the cloud)
+        _, nearest_indices = tree.query(inside_sphere) 
+        valid_mask = Density[nearest_indices] * gr_cm3_to_nuclei_cm3 > densthresh #creates a mask for the points in Pos which have a densuty bigger than the densitythreashold
+        valid_points = inside_sphere[valid_mask] #filters out for points with density * gr_cm3_to_nuclei_cm3 > densthresh
+        valid_vectors.extend(valid_points) #add each of those vectors inside the valid_vectors array
+    valid_vectors = np.array(valid_vectors) #turns the valid_vectors array into a numpy array
+    random_indices = np.random.choice(len(valid_vectors), max_cycles, replace=False) 
+    return valid_vectors[random_indices] #returns the points in a mixed order
 
 
 def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, VoronoiPos=None):
@@ -228,7 +235,7 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         mask = dens > 100  # True if continue
         un_masked = np.logical_not(mask)
 
-        #aux = x[un_masked]
+        aux = x[un_masked]
 
         # Perform Heun step and update values
         _, bfield, dens, vol, ke, pressure = Heun_step(
@@ -250,9 +257,12 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
 
         threshold += mask.astype(int)  # Increment threshold count only for values still above 100
 
+
+        # --- freeze stopped rays ---
+        x_old = x.copy()
         x += dx_vec * directions
+        x[un_masked] = x_old[un_masked]
         
-        #x[un_masked] = aux # all lines that have reached threshold are not to be updated
 
         line[k+1,:,:]    = x
         densities[k+1,:] = dens
@@ -304,9 +314,13 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
 
         dx_vec = np.min(((4 / 3) * vol[non_zero] / np.pi) ** (1 / 3))  # Increment step size
 
-        threshold_rev += mask.astype(int)  # Increment threshold count only for values still above 100
+        threshold_rev += mask_rev.astype(int)  # Increment threshold count only for values still above 100
 
+
+        # --- freeze stopped rays ---
+        x_old = x.copy()
         x -= dx_vec * directions
+        x[un_masked_rev] = x_old[un_masked_rev]
 
         line_rev[k+1,:,:]    = x
         densities_rev[k+1,:] = dens
@@ -360,6 +374,8 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
     #trajectory      *= pc_to_cm #* 3.086e+18                                # from Parsec to cm
 
     return radius_vector, trajectory, numb_densities, [threshold, threshold_rev], column
+
+
 
 
 def get_B_field_column_density(
@@ -515,4 +531,5 @@ if __name__=='__main__':
             x_init_points         = x_init,
             snapshot_number       = int(num_file),
             pathcolumn            = BDtotal,
+            full_columns          = column_reshaped,
             )
