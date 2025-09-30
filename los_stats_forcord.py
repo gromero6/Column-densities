@@ -232,19 +232,19 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
 
     while np.any(mask) and k < N:
 
-        mask = dens > 100  # True if continue
-        un_masked = np.logical_not(mask)
-
-        aux = x[un_masked]
+        active_x = x[mask]
+    
 
         # Perform Heun step and update values
-        _, bfield, dens, vol, ke, pressure = Heun_step(
-            x, +1, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
+        _, bfield, dens_sub, vol, ke, pressure = Heun_step(
+            active_x, +1, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
         )
         
+        still_active_mask = dens_sub>100
+
         mass_dens = dens * code_units_to_gr_cm3
         pressure *= mass_unit / (length_unit * (time_unit ** 2)) 
-        dens *= gr_cm3_to_nuclei_cm3
+        dens_sub *= gr_cm3_to_nuclei_cm3
         
         #vol[un_masked] = 0
         print( np.log10(dens[:1]))
@@ -252,25 +252,50 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         non_zero = vol > 0
         if len(vol[non_zero]) == 0:
             break
+        
+        active_vol = vol[still_active_mask]
 
-        dx_vec = np.min(((4 / 3) * vol[non_zero] / np.pi) ** (1 / 3))  # Increment step size
+        # --- START FIX ---
+        # Only consider active volumes that are non-zero
+        volumes_to_minimize = active_vol[active_vol > 0] 
+
+        if len(volumes_to_minimize) == 0:
+            # If there are no active, non-zero volumes left, break the loop 
+            # as there are no rays to propagate further based on this step size.
+            break 
+        
+
+        dx_vec = np.min(((4 / 3) * volumes_to_minimize / np.pi) ** (1 / 3))  # Increment step size
 
         threshold += mask.astype(int)  # Increment threshold count only for values still above 100
 
+        active_indices = np.where(mask)[0]
+        still_active_indices = active_indices[still_active_mask]
+
+        new_active_mask = np.zeros_like(mask, dtype=bool)
+        new_active_mask[still_active_indices] = True
 
         # --- freeze stopped rays ---
-        x_old = x.copy()
-        x += dx_vec * directions
-        x[un_masked] = x_old[un_masked]
-        
 
-        line[k+1,:,:]    = x
-        densities[k+1,:] = dens
-        bfields[k+1,:] = bfield
+        x[new_active_mask] += dx_vec * directions[new_active_mask]
+
+        # Step 1: First, carry over the complete state from the previous step (k).
+        # This ensures that any line that becomes inactive in this step retains its last active value.
+        line[k+1,:,:]      = line[k,:,:]
+        densities[k+1,:]   = densities[k,:]
+        bfields[k+1,:]     = bfields[k,:]
+
+        # Step 2: Now, use the NEW mask to overwrite the data for ONLY the active lines.
+        line[k+1, new_active_mask, :] = x[new_active_mask]              # Save the updated positions
+        densities[k+1, new_active_mask] = dens_sub[still_active_mask]     # Save the new densities
+        bfields[k+1, new_active_mask] = bfield[still_active_mask]   # Save the new B-fields
+
+        # ---------------------------------------------------------
 
         if np.all(un_masked):
             print("All values are False: means all density < 10^2")
             break
+        mask = new_active_mask
 
         k += 1
     
@@ -294,16 +319,17 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
 
     while np.any((mask_rev)) and k < N:
 
-        mask_rev = dens > 100  # True if continue
-        un_masked_rev = np.logical_not(mask_rev)
+        active_x = x[mask_rev]
 
         # Perform Heun step and update values
-        _, bfield, dens, vol, ke, pressure = Heun_step(
-            x, +1, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
+        _, bfield, dens_sub, vol, ke, pressure = Heun_step(
+            active_x, -1, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
         )
         
         pressure *= mass_unit / (length_unit * (time_unit ** 2)) 
-        dens *= gr_cm3_to_nuclei_cm3
+        dens_sub *= gr_cm3_to_nuclei_cm3
+
+        still_active_mask_rev = dens_sub > 100
         
         #vol[un_masked_rev] = 0
         print(x[0], np.log10(dens[0]))
@@ -311,25 +337,43 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         non_zero_rev = vol > 0
         if len(vol[non_zero_rev]) == 0:
             break
+        
+        active_vol = vol[still_active_mask_rev]
 
-        dx_vec = np.min(((4 / 3) * vol[non_zero] / np.pi) ** (1 / 3))  # Increment step size
+
+                # --- START FIX ---
+        # Only consider active volumes that are non-zero
+        volumes_to_minimize_rev = active_vol[active_vol > 0] 
+
+        if len(volumes_to_minimize_rev) == 0:
+            # If there are no active, non-zero volumes left, break the loop 
+            # as there are no rays to propagate further based on this step size.
+            break 
+        dx_vec = np.min(((4 / 3) * volumes_to_minimize_rev / np.pi) ** (1 / 3))  # Increment step size
 
         threshold_rev += mask_rev.astype(int)  # Increment threshold count only for values still above 100
 
+        active_incides_rev = np.where(mask_rev)[0]
+        still_active_indices_rev = active_incides_rev[still_active_mask_rev]
+        new_active_mask_rev = np.zeros_like(mask_rev, dtype = bool)
+        new_active_mask_rev[still_active_indices_rev] = True
+     
+        x[new_active_mask_rev] -= dx_vec * directions[new_active_mask_rev]
+  
 
-        # --- freeze stopped rays ---
-        x_old = x.copy()
-        x -= dx_vec * directions
-        x[un_masked_rev] = x_old[un_masked_rev]
+        line_rev[k+1,:,:]      = line_rev[k,:,:]
+        densities_rev[k+1,:]   = densities_rev[k,:]
+        bfields_rev[k+1,:]     = bfields_rev[k,:]
 
-        line_rev[k+1,:,:]    = x
-        densities_rev[k+1,:] = dens
-        bfields_rev[k+1,:] = bfield
+        line_rev[k+1, new_active_mask_rev, :] = x[new_active_mask_rev]              # Save the updated positions
+        densities_rev[k+1, new_active_mask_rev] = dens_sub[still_active_mask_rev]     # Save the new densities
+        bfields_rev[k+1, new_active_mask_rev] = bfield[still_active_mask_rev]   # Save the new B-fields
+
 
         if np.all(un_masked_rev):
             print("All values are False: means all density < 10^2")
             break
-
+        mask_rev = new_active_mask_rev
         k += 1
 
     # updated_mask = np.logical_not(np.logical_and(mask, mask_rev))
