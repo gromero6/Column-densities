@@ -569,6 +569,7 @@ if __name__=='__main__':
         column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
         mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
         np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
+            trajectories          = trajectory,
             densities             = numb_densities,
             positions             = radius_vector, 
             mean_column_densities = mean_column_per_point,
