@@ -44,27 +44,49 @@ def find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos
 	
 def Heun_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume):
     local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos)
-    local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1,(3,1)).T
-    CellVol = Volume[cells]
-    dx *= 0.4*((3/4)*CellVol/np.pi)**(1/3)  
-    x_tilde = x + dx[:, np.newaxis] * local_fields_1
-    local_fields_2, abs_local_fields_2, local_densities, cells = find_points_and_get_fields(x_tilde, Bfield, Density, Density_grad, Pos, VoronoiPos)
-    local_fields_2 = local_fields_2 / np.tile(abs_local_fields_2,(3,1)).T	
-    abs_sum_local_fields = np.sqrt(np.sum((local_fields_1 + local_fields_2)**2,axis=1))
+    local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1,(3,1)).T #normalize the local fields
+    CellVol = Volume[cells] #volume of the cells where the points are located
+    dx *= 0.4*((3/4)*CellVol/np.pi)**(1/3)  #update step size based on cell volume
+    x_tilde = x + dx[:, np.newaxis] * local_fields_1 #predictor step
+    local_fields_2, abs_local_fields_2, local_densities, cells = find_points_and_get_fields(x_tilde, Bfield, Density, Density_grad, Pos, VoronoiPos) #get fields at predicted position
+    local_fields_2 = local_fields_2 / np.tile(abs_local_fields_2,(3,1)).T    #normalize the local fields at predicted position
+    abs_sum_local_fields = np.sqrt(np.sum((local_fields_1 + local_fields_2)**2,axis=1)) #magnitude of the sum of the two local fields
 
-    unito = 2*(local_fields_1 + local_fields_2)/abs_sum_local_fields[:, np.newaxis]
-    x_final = x + 0.5 * dx[:, np.newaxis] * unito
-    kinetic_energy = 0.5*Mass[cells]*np.linalg.norm(Velocities[cells], axis=1)**2
-    pressure = Pressure[cells]
+    unito = 2*(local_fields_1 + local_fields_2)/abs_sum_local_fields[:, np.newaxis] #unit vector in the direction of the average field
+    x_final = x + 0.5 * dx[:, np.newaxis] * unito #corrector step
+    kinetic_energy = 0.5*Mass[cells]*np.linalg.norm(Velocities[cells], axis=1)**2 #kinetic energy calculation
+    pressure = Pressure[cells] #pressure at the cells
     
     return x_final, abs_local_fields_1, local_densities, CellVol, kinetic_energy, pressure
+
+def Euler_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume, bdirection=None):
+
+    # Get local fields and densities at the current position
+    local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos)
+
+    # Normalize the local fields
+    local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1, (3, 1)).T
+
+    # Update step size based on cell volume
+    CellVol = Volume[cells]
+    dx *= ((3 / 4) * Volume[cells] / np.pi) ** (1 / 3)
+
+    # Compute the final position using the Euler method
+    x_final = x + dx[:, np.newaxis] * local_fields_1
+
+    # Update the magnetic field direction 
+    bdirection = local_fields_1
+
+
+
+    return x_final, abs_local_fields_1, local_densities, CellVol
+
 
 FloatType = np.float64
 IntType = np.int32
 
 """ 
-python3 los_stats.py 2000 ideal 430 50 S seed > ELOS430TST.txt 2> ELOS430TST_error.txt &
-python3 los_stats.py 2000 ideal 430 50 N seed > NLOS430TST.txt 2> NLOS430TST_error.txt &
+python3 los_stats_forcord.py 2000 ideal 430 1000 20 12345
 
 S : Stability
 N : Column densities
@@ -505,8 +527,94 @@ def get_B_field_column_density(
         if not np.any(mask_fwd) and not np.any(mask_bck):
             break
             
-    BDtotal = column_fwd + column_bck
-    return BDtotal
+    BDtotal_heun = column_fwd + column_bck
+    return BDtotal_heun
+
+def get_B_field_column_density_euler(
+    x_init,
+    Bfield,
+    Density,
+    densthresh,
+    N,
+    max_cycles,
+    Density_grad,
+    Volume,
+    VoronoiPos,
+    Pos
+):
+    """
+    Calculates the column density over magnetic field lines for all x_init points
+    """
+    
+    BDtotal = np.zeros(max_cycles)
+    column_fwd = np.zeros(max_cycles)
+    column_bck = np.zeros(max_cycles)
+    current_fwd = x_init.copy()
+    current_bck = x_init.copy()
+    
+    mask_fwd = np.ones(max_cycles, dtype=bool)
+    mask_bck = np.ones(max_cycles, dtype=bool)
+
+    for i in range(N):
+        if np.any(mask_fwd):
+            
+            # only for active mask poitns
+            active_fwd = current_fwd[mask_fwd]
+            
+            _, _, local_densities_fwd, _ = find_points_and_get_fields(
+                active_fwd, Bfield, Density, Density_grad, Pos, VoronoiPos
+            )
+            
+            local_densities_fwd *= gr_cm3_to_nuclei_cm3
+            new_mask_fwd = local_densities_fwd > densthresh
+
+            local_densities_fwd[~new_mask_fwd] = 0
+            
+            next_fwd, _, _, _ = Euler_step(
+                active_fwd, np.ones(len(active_fwd)) * 0.5, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
+            )
+
+            distance_traveled_fwd = np.linalg.norm(next_fwd - active_fwd, axis=1) * pc_to_cm
+
+            column_fwd[mask_fwd] += local_densities_fwd * distance_traveled_fwd
+            current_fwd[mask_fwd] = next_fwd
+
+            mask_fwd[mask_fwd] = new_mask_fwd
+        #backwards
+        if np.any(mask_bck):
+            
+    
+            active_bck = current_bck[mask_bck]
+            
+            _, _, local_densities_bck, _ = find_points_and_get_fields(
+                active_bck, Bfield, Density, Density_grad, Pos, VoronoiPos
+            )
+            
+            local_densities_bck *= gr_cm3_to_nuclei_cm3
+
+            # above threashhold
+            new_mask_bck = local_densities_bck > densthresh
+            
+            local_densities_bck[~new_mask_bck] = 0 #those that dont go above the threashold become zero
+            
+        
+            next_bck, _, _, _ = Euler_step(
+                active_bck, np.ones(len(active_bck)) * -0.5, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume
+            )
+            
+            distance_traveled_bck = np.linalg.norm(next_bck - active_bck, axis=1) * pc_to_cm
+            
+            column_bck[mask_bck] += local_densities_bck * distance_traveled_bck
+            current_bck[mask_bck] = next_bck
+            
+            mask_bck[mask_bck] = new_mask_bck
+            
+        # if both masks false
+        if not np.any(mask_fwd) and not np.any(mask_bck):
+            break
+            
+    BDtotal_euler = column_fwd + column_bck
+    return BDtotal_euler
 
 print("Simulation Parameters:")
 print("Case               : ", case)
@@ -528,6 +636,7 @@ if __name__=='__main__':
     cloud_centers = clouds_center(clouds_file_path, num_file)
     num_clouds = cloud_centers.shape[0]
 
+    full_CD_calculations_time = np.zeros((2,num_clouds))
     for i in range(num_clouds):
     
         Pos_copy = Pos.copy()
@@ -555,6 +664,7 @@ if __name__=='__main__':
         m = x_init.shape[0] # number of target points
         d = directions.shape[0] # number of directions
         total_lines = m*d
+
         
         print(total_lines, "lines of sight generated for all points")
         print("No. of starting positions:", x_init.shape)
@@ -564,7 +674,21 @@ if __name__=='__main__':
         radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
         threshold, threshold_rev = th
 
-        BDtotal = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        start_time_heun = time.perf_counter()
+        BD_total_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        end_time_heun = time.perf_counter()
+
+        full_time_heun_CDs = end_time_heun - start_time_heun
+        
+        start_time_euler = time.perf_counter()
+        BD_total_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        end_time_euler = time.perf_counter()
+
+        full_time_euler_CDs = end_time_euler - start_time_euler
+
+        full_CD_calculations_time[0,i] = full_time_heun_CDs
+        full_CD_calculations_time[1,i] = full_time_euler_CDs
+
 
         column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
         mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
@@ -575,6 +699,14 @@ if __name__=='__main__':
             mean_column_densities = mean_column_per_point,
             x_init_points         = x_init,
             snapshot_number       = int(num_file),
-            pathcolumn            = BDtotal,
+            pathcolumn_heun       = BD_total_heun,
+            pathcolumn_euler      = BD_total_euler,
             full_columns          = column_reshaped,
+            CD_times              = full_CD_calculations_time,
             )
+        
+    average_time_heun = np.mean(full_CD_calculations_time, axis=0)
+    average_time_euler = np.mean(full_CD_calculations_time, axis=1) 
+
+    print("Average time for full CD calculations Heun: ", average_time_heun)
+    print("Average time for full CD calculations Euler: ", average_time_euler)
