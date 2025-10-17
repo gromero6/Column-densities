@@ -79,19 +79,39 @@ def find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos
 	
 def Heun_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume, bdirection = None):
     local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos)
-    local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1,(3,1)).T
+    local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1,(3,1)).T #normalize the local fields
     CellVol = Volume[cells]
-    dx *= ((3/4)*Volume[cells]/np.pi)**(1/3)  
-    x_tilde = x + dx[:, np.newaxis] * local_fields_1
-    local_fields_2, abs_local_fields_2, local_densities, cells = find_points_and_get_fields(x_tilde, Bfield, Density, Density_grad, Pos, VoronoiPos)
-    local_fields_2 = local_fields_2 / np.tile(abs_local_fields_2,(3,1)).T	
-    abs_sum_local_fields = np.sqrt(np.sum((local_fields_1 + local_fields_2)**2,axis=1))
+    dx *= ((3/4)*Volume[cells]/np.pi)**(1/3)  #update step size based on cell volume
+    x_tilde = x + dx[:, np.newaxis] * local_fields_1 #predictor step
+    local_fields_2, abs_local_fields_2, local_densities, cells = find_points_and_get_fields(x_tilde, Bfield, Density, Density_grad, Pos, VoronoiPos) #get fields at predicted position
+    local_fields_2 = local_fields_2 / np.tile(abs_local_fields_2,(3,1)).T	#normalize the local fields at predicted position
+    abs_sum_local_fields = np.sqrt(np.sum((local_fields_1 + local_fields_2)**2,axis=1)) #
 
     unito = 2*(local_fields_1 + local_fields_2)/abs_sum_local_fields[:, np.newaxis]
     x_final = x + 0.5 * dx[:, np.newaxis] * unito
 
     bdirection = 0.5*(local_fields_1 + local_fields_2)
     
+    return x_final, abs_local_fields_1, local_densities, CellVol
+
+def Euler_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume, bdirection=None):
+
+    # Get local fields and densities at the current position
+    local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos)
+
+    # Normalize the local fields
+    local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1, (3, 1)).T
+
+    # Update step size based on cell volume
+    CellVol = Volume[cells]
+    dx *= ((3 / 4) * Volume[cells] / np.pi) ** (1 / 3)
+
+    # Compute the final position using the Euler method
+    x_final = x + dx[:, np.newaxis] * local_fields_1
+
+    # Update the magnetic field direction 
+    bdirection = local_fields_1
+
     return x_final, abs_local_fields_1, local_densities, CellVol
 
 def list_files(directory, ext):
