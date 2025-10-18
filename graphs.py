@@ -43,7 +43,7 @@ while i <16:
 
     x_init  = data['x_init_points']
     mean_CD = data['mean_column_densities']
-    path_CD = data["pathcolumn"]
+    path_CD = data["pathcolumn_heun"]
 
     final_column_density = mean_CD[-1, :]
     radial_distance_pc = np.linalg.norm(x_init, axis=1)
