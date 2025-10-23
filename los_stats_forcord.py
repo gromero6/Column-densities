@@ -92,7 +92,7 @@ S : Stability
 N : Column densities
 
 """
-if len(sys.argv)>6: 
+if len(sys.argv)>6:                                                                                                                                                                                               
     N                 = int(sys.argv[1])
     case              = str(sys.argv[2]) #ideal/amb
     num_file          = str(sys.argv[3]) 
@@ -615,6 +615,152 @@ def get_B_field_column_density_euler(
     BDtotal_euler = column_fwd + column_bck
     return BDtotal_euler
  
+def NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df):
+    import pandas as pd
+    from scipy.stats import linregress
+
+    cloud_data   = df.iloc[i]
+    cloud_number = cloud_data["index"]
+    peak_density = cloud_data["Peak_Density"]
+    x = cloud_data["CloudCord_X"]
+    y = cloud_data["CloudCord_Y"]
+    z = cloud_data["CloudCord_Z"]
+
+    data_coordinates = np.load
+    data_directory = os.path.join("thesis_los", case, snap)
+    data_name = f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"
+    full_data_path = os.path.join(data_directory, data_name)
+    data = np.load(full_data_path)
+
+
+    print(data.files)
+    output_folder1 = "./graphs/rvsNheun"
+    png_name1 = f"ColumnDensity_vs_RadialDistance_Heun_{seed}_{m}_{d}_{i}.png"
+
+    output_folder2 = "./graphs/rvsNeuler"
+    png_name2 = f"ColumnDensity_vs_RadialDistance_Euler_{seed}_{m}_{d}_{i}.png"
+
+    x_init  = data['x_init_points']
+    mean_CD = data['mean_column_densities']
+    path_CD_heun = data["pathcolumn_heun"]
+    path_CD_euler = data["pathcolumn_euler"]
+
+    final_column_density = mean_CD[-1, :]
+    radial_distance_pc = np.linalg.norm(x_init, axis=1)
+    radial_distance_cm = radial_distance_pc * pc_to_cm
+
+    #filter LOS data to keep negatives out (all N >0 ut a good practice to have :) )
+    los_x  = radial_distance_cm[final_column_density > 0]
+    los_y  = final_column_density[final_column_density > 0]
+    #now for the B field path of Heun method
+    path_x_heun = radial_distance_cm[path_CD_heun > 0]
+    path_y_heun = path_CD_heun[path_CD_heun > 0]
+    #the same for the euler method
+    path_x_euler = radial_distance_cm[path_CD_euler > 0]
+    path_y_euler = path_CD_euler[path_CD_euler > 0]
+        
+    los_slope, los_intercept, los_r, los_p, los_std_err = linregress(np.log10(los_x), np.log10(los_y))
+    los_fitline = los_slope * np.log10(los_x) + los_intercept
+
+    path_slope_heun, path_intercept_heun, path_r_heun, path_p_heun, path_std_err_heun = linregress(np.log10(path_x_heun), np.log10(path_y_heun))
+    path_fitline_heun = path_slope_heun * np.log10(path_x_heun) + path_intercept_heun
+
+    path_slope_euler, path_interncept_euler, path_r_euler, path_p_euler, path_std_err_euler = linregress(np.log10(path_x_euler), np.log10(path_y_euler))
+    path_fitline_euler = path_slope_euler * np.log10(path_x_euler) + path_interncept_euler
+        
+    r_values_los.append(los_r)
+    r_values_path.append(path_r_heun)
+        
+    # Plotting for Heun method vs radial distance
+    plt.figure(figsize=(10, 6))
+
+    plt.scatter(radial_distance_cm, final_column_density, s=10, alpha=0.5, color = "blue", label = " mean final column density along LOS")
+    plt.scatter(radial_distance_cm, path_CD_heun, s = 10, alpha =0.3, color= "red", label = "column density along a B field path")
+
+    plt.plot(los_x, 10**los_fitline, color="black", ls = ":", lw = 1, label=f"LOS Fit: $N \\propto r$ ($R^2={los_r**2:.2f}$)")
+    plt.plot(path_x_heun, 10**path_fitline_heun, color = "black", ls = "--", lw = 1, label=f"Path Fit: $N \\propto r$ ($R^2={path_r_heun**2:.2f}$)")
+
+    plt.legend()
+
+    plt.xscale('log')
+    plt.yscale('log')
+
+    plt.xlabel('$cm$', fontsize=14)
+    plt.ylabel('$N (cm^{-2})$', fontsize=14)
+        
+    title_text = f"Column Density vs. Distance: Cloud {int(cloud_number)}"
+    plt.title(title_text, fontsize=16)
+
+    plt.grid(True, which="both", ls=":")
+    plt.ylim( (10e20, 10e27) )
+
+    info_text = (
+    f"Center Coordinates: ({x:.2f}, {y:.2f}, {z:.2f})\n"
+    f"Peak Density: {peak_density:.2f}"
+    )
+    plt.figtext(0.15, 0.02, info_text, fontsize=10, ha='left')
+
+    full_path1 = os.path.join(output_folder1, png_name1)
+    plt.savefig(full_path1, dpi=300)
+    print("plot saved to: ", full_path1)
+
+    # Plotting for Euler method vs radial distance
+    plt.figure(figsize=(10, 6))
+    plt.scatter(radial_distance_cm, final_column_density, s=10, alpha=0.5, color = "blue", label = " mean final column density along LOS")
+    plt.scatter(radial_distance_cm, path_CD_euler, s = 10, alpha =0.3, color= "green", label = "column density along a B field path")
+    plt.plot(los_x, 10**los_fitline, color="black", ls = ":", lw = 1, label=f"LOS Fit: $N \\propto r$ ($R^2={los_r**2:.2f}$)")
+    plt.plot(path_x_euler, 10**path_fitline_euler, color = "black", ls = "--", lw = 1, label=f"Path Fit: $N \\propto r$ ($R^2={path_r_euler**2:.2f}$)")
+    plt.legend()
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('$cm$', fontsize=14)
+    plt.ylabel('$N (cm^{-2})$', fontsize=14)
+    title_text = f"Column Density vs. Distance: Cloud {int(cloud_number)}"
+    plt.title(title_text, fontsize=16)
+    plt.grid(True, which="both", ls=":")
+    plt.ylim( (10e20, 10e27) )
+    info_text = (
+    f"Center Coordinates: ({x:.2f}, {y:.2f}, {z:.2f})\n"
+    f"Peak Density: {peak_density:.2f}"
+    )
+    plt.figtext(0.15, 0.02, info_text, fontsize=10, ha='left')
+
+    full_path2 = os.path.join(output_folder2, png_name2)
+    plt.savefig(full_path2, dpi=300)
+    print("plot saved to: ", full_path2)
+
+def graphs(m,d,case,snap,seed):
+    folderrvsNheun = os.path.join('graphs', 'rvsNheun')
+    if not os.path.exists(folderrvsNheun):
+        os.makedirs(folderrvsNheun)
+
+    folderrvsNeuler = os.path.join('graphs', 'rvsNeuler')
+    if not os.path.exists(folderrvsNeuler):
+        os.makedirs(folderrvsNeuler)
+
+    r_values_los  = []
+    r_values_path = []
+
+    coordirec = os.path.join("clouds")
+    cornames  = f"{case}_clouds.txt"
+    full_cord_path = os.path.join(coordirec, cornames)
+    df = pd.read_csv(full_cord_path)
+
+    
+    gr = input('What do you want to plot?: (1) N vs R for Heun and Euler')
+    if gr == '1':
+        allorone = input('Do you want to plot for (a) all clouds or (b) one cloud? ')
+        if allorone.lower() == 'a':
+            i = 0
+            while i < num_clouds:
+                NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df)
+                i += 1
+        elif allorone.lower() == 'b':
+                i = int(input("Enter the cloud number you want to plot: "))
+                NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df)
+        
+
+
 print("Simulation Parameters:")
 print("Case               : ", case)
 print("Steps in Simulation: ", N)
@@ -789,6 +935,12 @@ if __name__=='__main__':
         elif all_clouds == 'A':
             column_density_LOS_Bfield_clouds()
     elif inp == 'G':
-        pass
+        m     = input("Enter number of points: ")
+        d     = input("Enter Number of lines of sight per point: ")
+        case  = input("Enter case (ideal/amb): ")
+        snap  = input("Enter snapshot number: ")
+        seed  = input("Enter seed number: ")
+        graphs(m,d,case,snap,seed)
+
 
 #this version tries to unify all of my scripts into one for better analysis and less redundancy
