@@ -98,19 +98,17 @@ if len(sys.argv)>6:
     num_file          = str(sys.argv[3]) 
     max_cycles        = int(sys.argv[4]) #numero de puntos
     nd                = int(sys.argv[5]) #numero de direcciónes 
-    try:
-        seed              = int(sys.argv[6])
-    except:
-        seed            = 12345
+    compute              = int(sys.argv[6])
+
 else:
     N               = 2000 #number of steps
     case            = 'ideal' #ideal or ambipolar
     num_file        = '430' #snapshot number
     max_cycles      = 100 # number of x init points generated
     nd              = 10 #directions nunmber of LOS
-    seed            = 12345
 
 rloc = 0.1 # radius of the sphere in which the points are generated
+seed = 12345
 
 #it searches for the directory, ideal or ambipolar
 if case == 'ideal':
@@ -218,7 +216,8 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
     dx = 0.5
 
     #expand arrays
-
+    d = directions.shape[0]
+    m = x_init.shape[0] # number of target points
     x_init = np.repeat(x_init, d, axis=0)
     directions = np.tile(directions, (m, 1))  # Repeat directions for each point in x_init
 
@@ -615,7 +614,7 @@ def get_B_field_column_density_euler(
             
     BDtotal_euler = column_fwd + column_bck
     return BDtotal_euler
-
+ 
 print("Simulation Parameters:")
 print("Case               : ", case)
 print("Steps in Simulation: ", N)
@@ -636,77 +635,85 @@ if __name__=='__main__':
     cloud_centers = clouds_center(clouds_file_path, num_file)
     num_clouds = cloud_centers.shape[0]
 
-    full_CD_calculations_time = np.zeros((2,num_clouds))
-    for i in range(num_clouds):
-    
-        Pos_copy = Pos.copy()
-        VoronoiPos_copy = VoronoiPos.copy()
+    def column_density_LOS_Bfield_clouds():
+        full_CD_calculations_time_average = np.zeros((2,num_clouds))
+        full_CD_calculations_time         = np.zeros((2,))
+        for i in range(num_clouds):
         
-        print("Centering on cloud:", i)
-        print("Coordinates:", cloud_centers[i])
-        
-        # create a copy for each cloud that it doesn't re-center previous coordinates
-        Pos_copy -= cloud_centers[i]
-        VoronoiPos_copy -= cloud_centers[i]
-
-        for dim in range(3):  # Loop over x, y, z
-            pos_from_center = Pos_copy[:, dim]
-            boundary_mask = pos_from_center > Boxsize / 2
-            Pos_copy[boundary_mask, dim] -= Boxsize
-            VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+            Pos_copy = Pos.copy()
+            VoronoiPos_copy = VoronoiPos.copy()
             
-            boundary_mask = pos_from_center < -Boxsize / 2
-            Pos_copy[boundary_mask, dim] += Boxsize
-            VoronoiPos_copy[boundary_mask, dim] += Boxsize
-        
-        x_init = generate_vectors_in_core(max_cycles, densthresh, Pos_copy, rloc, seed)
-        directions = fibonacci_sphere(nd)
-        m = x_init.shape[0] # number of target points
-        d = directions.shape[0] # number of directions
-        total_lines = m*d
+            print("Centering on cloud:", i)
+            print("Coordinates:", cloud_centers[i])
+            
+            # create a copy for each cloud that it doesn't re-center previous coordinates
+            Pos_copy -= cloud_centers[i]
+            VoronoiPos_copy -= cloud_centers[i]
 
-        
-        print(total_lines, "lines of sight generated for all points")
-        print("No. of starting positions:", x_init.shape)
-        print("No. of directions:", directions.shape)
-        print('Directions provided by the LOS at points')
+            for dim in range(3):  # Loop over x, y, z
+                pos_from_center = Pos_copy[:, dim]
+                boundary_mask = pos_from_center > Boxsize / 2
+                Pos_copy[boundary_mask, dim] -= Boxsize
+                VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+                
+                boundary_mask = pos_from_center < -Boxsize / 2
+                Pos_copy[boundary_mask, dim] += Boxsize
+                VoronoiPos_copy[boundary_mask, dim] += Boxsize
+            
+            x_init = generate_vectors_in_core(max_cycles, densthresh, Pos_copy, rloc, seed)
+            directions = fibonacci_sphere(nd)
+            m = x_init.shape[0] # number of target points
+            d = directions.shape[0] # number of directions
+            total_lines = m*d
 
-        radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
-        threshold, threshold_rev = th
+            
+            print(total_lines, "lines of sight generated for all points")
+            print("No. of starting positions:", x_init.shape)
+            print("No. of directions:", directions.shape)
+            print('Directions provided by the LOS at points')
 
-        start_time_heun = time.perf_counter()
-        BD_total_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
-        end_time_heun = time.perf_counter()
+            radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
+            threshold, threshold_rev = th
 
-        full_time_heun_CDs = end_time_heun - start_time_heun
-        
-        start_time_euler = time.perf_counter()
-        BD_total_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
-        end_time_euler = time.perf_counter()
+            start_time_heun = time.perf_counter()
+            BD_total_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+            end_time_heun = time.perf_counter()
 
-        full_time_euler_CDs = end_time_euler - start_time_euler
+            full_time_heun_CDs = end_time_heun - start_time_heun
+            
+            start_time_euler = time.perf_counter()
+            BD_total_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+            end_time_euler = time.perf_counter()
 
-        full_CD_calculations_time[0,i] = full_time_heun_CDs
-        full_CD_calculations_time[1,i] = full_time_euler_CDs
+            full_time_euler_CDs = end_time_euler - start_time_euler
+
+            full_CD_calculations_time[0,i] = full_time_heun_CDs
+            full_CD_calculations_time[1,i] = full_time_euler_CDs
 
 
-        column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
-        mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
-        np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
-            trajectories          = trajectory,
-            densities             = numb_densities,
-            positions             = radius_vector, 
-            mean_column_densities = mean_column_per_point,
-            x_init_points         = x_init,
-            snapshot_number       = int(num_file),
-            pathcolumn_heun       = BD_total_heun,
-            pathcolumn_euler      = BD_total_euler,
-            full_columns          = column_reshaped,
-            CD_times              = full_CD_calculations_time,
-            )
-        
-    average_time_heun = np.mean(full_CD_calculations_time, axis=0)
-    average_time_euler = np.mean(full_CD_calculations_time, axis=1) 
+            column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
+            mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
+            np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
+                trajectories          = trajectory,
+                densities             = numb_densities,
+                positions             = radius_vector, 
+                mean_column_densities = mean_column_per_point,
+                x_init_points         = x_init,
+                snapshot_number       = int(num_file),
+                pathcolumn_heun       = BD_total_heun,
+                pathcolumn_euler      = BD_total_euler,
+                full_columns          = column_reshaped,
+                CD_times              = full_CD_calculations_time,
+                )
+            
+        average_time_heun = np.mean(full_CD_calculations_time, axis=0)
+        average_time_euler = np.mean(full_CD_calculations_time, axis=1) 
 
-    print("Average time for full CD calculations Heun: ", average_time_heun)
-    print("Average time for full CD calculations Euler: ", average_time_euler)
+        print("Average time for full CD calculations Heun: ", average_time_heun)
+        print("Average time for full CD calculations Euler: ", average_time_euler)
+
+    inp = input("What do you want to compute? Press N for column densities and G for graphs: ") #NorG
+    if inp == 'N':
+        column_density_LOS_Bfield_clouds()
+    elif inp == 'G':
+        pass
