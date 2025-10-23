@@ -712,8 +712,83 @@ if __name__=='__main__':
         print("Average time for full CD calculations Heun: ", average_time_heun)
         print("Average time for full CD calculations Euler: ", average_time_euler)
 
+    def one_cloud_N():
+
+
+        i = int(input("Enter the cloud number you want to compute: "))
+        
+        Pos_copy = Pos.copy()
+        VoronoiPos_copy = VoronoiPos.copy()
+            
+        print("Centering on cloud:", i)
+        print("Coordinates:", cloud_centers[i])
+            
+            # create a copy for each cloud that it doesn't re-center previous coordinates
+        Pos_copy -= cloud_centers[i]
+        VoronoiPos_copy -= cloud_centers[i]
+
+        for dim in range(3):  # Loop over x, y, z
+            pos_from_center = Pos_copy[:, dim]
+            boundary_mask = pos_from_center > Boxsize / 2
+            Pos_copy[boundary_mask, dim] -= Boxsize
+            VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+                
+            boundary_mask = pos_from_center < -Boxsize / 2
+            Pos_copy[boundary_mask, dim] += Boxsize
+            VoronoiPos_copy[boundary_mask, dim] += Boxsize
+            
+        x_init = generate_vectors_in_core(max_cycles, densthresh, Pos_copy, rloc, seed)
+        directions = fibonacci_sphere(nd)
+        m = x_init.shape[0] # number of target points
+        d = directions.shape[0] # number of directions
+        total_lines = m*d
+
+            
+        print(total_lines, "lines of sight generated for all points")
+        print("No. of starting positions:", x_init.shape)
+        print("No. of directions:", directions.shape)
+        print('Directions provided by the LOS at points')
+
+        radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
+        threshold, threshold_rev = th
+
+        start_time_heun = time.perf_counter()
+        BD_total_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        end_time_heun = time.perf_counter()
+
+        full_time_heun_CDs = end_time_heun - start_time_heun
+            
+        start_time_euler = time.perf_counter()
+        BD_total_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        end_time_euler = time.perf_counter()
+
+        full_time_euler_CDs = end_time_euler - start_time_euler
+
+        
+
+
+        column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
+        mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
+        np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
+            trajectories          = trajectory,
+            densities             = numb_densities,
+            positions             = radius_vector, 
+            mean_column_densities = mean_column_per_point,
+            x_init_points         = x_init,
+            snapshot_number       = int(num_file),
+            pathcolumn_heun       = BD_total_heun,
+            pathcolumn_euler      = BD_total_euler,
+            full_columns          = column_reshaped,
+            )
+            
     inp = input("What do you want to compute? Press N for column densities and G for graphs: ") #NorG
     if inp == 'N':
-        column_density_LOS_Bfield_clouds()
+        all_clouds = input("Do you want to compute for all clouds or a single one? Press A for all or S for single: ") #AorS
+        if all_clouds == 'S':
+            one_cloud_N()
+        elif all_clouds == 'A':
+            column_density_LOS_Bfield_clouds()
     elif inp == 'G':
         pass
+
+#this version tries to unify all of my scripts into one for better analysis and less redundancy
