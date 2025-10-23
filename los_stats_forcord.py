@@ -468,6 +468,14 @@ def get_B_field_column_density(
     mask_fwd = np.ones(max_cycles, dtype=bool)
     mask_bck = np.ones(max_cycles, dtype=bool)
 
+
+    # Initialize arrays to store distance traveled and number density at each step
+    distance_fwd = np.zeros((N, max_cycles))
+    number_density_fwd = np.zeros((N, max_cycles))
+    distance_bck = np.zeros((N, max_cycles))
+    number_density_bck = np.zeros((N, max_cycles))
+
+
     for i in range(N):
         if np.any(mask_fwd):
             
@@ -488,6 +496,11 @@ def get_B_field_column_density(
             )
 
             distance_traveled_fwd = np.linalg.norm(next_fwd - active_fwd, axis=1) * pc_to_cm
+
+            # Update distance and number density arrays
+            distance_fwd[i, mask_fwd] = distance_traveled_fwd
+            number_density_fwd[i, mask_fwd] = local_densities_fwd
+
 
             column_fwd[mask_fwd] += local_densities_fwd * distance_traveled_fwd
             current_fwd[mask_fwd] = next_fwd
@@ -516,7 +529,13 @@ def get_B_field_column_density(
             )
             
             distance_traveled_bck = np.linalg.norm(next_bck - active_bck, axis=1) * pc_to_cm
-            
+
+
+            # Update distance and number density arrays
+            distance_bck[i, mask_bck] = distance_traveled_bck
+            number_density_bck[i, mask_bck] = local_densities_bck
+
+
             column_bck[mask_bck] += local_densities_bck * distance_traveled_bck
             current_bck[mask_bck] = next_bck
             
@@ -525,9 +544,13 @@ def get_B_field_column_density(
         # if both masks false
         if not np.any(mask_fwd) and not np.any(mask_bck):
             break
-            
+
+    # Concatenate forward and backward arrays
+    total_distance_heun = np.concatenate((distance_bck[::-1], distance_fwd), axis=0)
+    total_number_density_heun = np.concatenate((number_density_bck[::-1], number_density_fwd), axis=0)
+           
     BDtotal_heun = column_fwd + column_bck
-    return BDtotal_heun
+    return BDtotal_heun, total_distance_heun, total_number_density_heun
 
 def get_B_field_column_density_euler(
     x_init,
@@ -554,6 +577,13 @@ def get_B_field_column_density_euler(
     mask_fwd = np.ones(max_cycles, dtype=bool)
     mask_bck = np.ones(max_cycles, dtype=bool)
 
+    # Initialize arrays to store distance traveled and number density at each step
+    distance_fwd = np.zeros((N, max_cycles))
+    number_density_fwd = np.zeros((N, max_cycles))
+    distance_bck = np.zeros((N, max_cycles))
+    number_density_bck = np.zeros((N, max_cycles))
+
+
     for i in range(N):
         if np.any(mask_fwd):
             
@@ -574,6 +604,10 @@ def get_B_field_column_density_euler(
             )
 
             distance_traveled_fwd = np.linalg.norm(next_fwd - active_fwd, axis=1) * pc_to_cm
+
+            # Update distance and number density arrays
+            distance_fwd[i, mask_fwd] = distance_traveled_fwd
+            number_density_fwd[i, mask_fwd] = local_densities_fwd
 
             column_fwd[mask_fwd] += local_densities_fwd * distance_traveled_fwd
             current_fwd[mask_fwd] = next_fwd
@@ -602,7 +636,10 @@ def get_B_field_column_density_euler(
             )
             
             distance_traveled_bck = np.linalg.norm(next_bck - active_bck, axis=1) * pc_to_cm
-            
+            # Update distance and number density arrays
+            distance_bck[i, mask_bck] = distance_traveled_bck
+            number_density_bck[i, mask_bck] = local_densities_bck
+           
             column_bck[mask_bck] += local_densities_bck * distance_traveled_bck
             current_bck[mask_bck] = next_bck
             
@@ -611,9 +648,12 @@ def get_B_field_column_density_euler(
         # if both masks false
         if not np.any(mask_fwd) and not np.any(mask_bck):
             break
-            
+    # Concatenate forward and backward arrays
+    total_distance_euler = np.concatenate((distance_bck[::-1], distance_fwd), axis=0)
+    total_number_density_euler = np.concatenate((number_density_bck[::-1], number_density_fwd), axis=0)
+
     BDtotal_euler = column_fwd + column_bck
-    return BDtotal_euler
+    return BDtotal_euler, total_distance_euler, total_number_density_euler
  
 def NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df):
     import pandas as pd
@@ -630,8 +670,12 @@ def NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df):
     data_directory = os.path.join("thesis_los", case, snap)
     data_name = f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"
     full_data_path = os.path.join(data_directory, data_name)
+    if not os.path.exists(full_data_path):
+        print("File not found:", full_data_path)
+        one_cloud_N(i)
+        return NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df)
+    
     data = np.load(full_data_path)
-
 
     print(data.files)
     output_folder1 = "./graphs/rvsNheun"
@@ -858,10 +902,7 @@ if __name__=='__main__':
         print("Average time for full CD calculations Heun: ", average_time_heun)
         print("Average time for full CD calculations Euler: ", average_time_euler)
 
-    def one_cloud_N():
-
-
-        i = int(input("Enter the cloud number you want to compute: "))
+    def one_cloud_N(i):
         
         Pos_copy = Pos.copy()
         VoronoiPos_copy = VoronoiPos.copy()
@@ -899,13 +940,13 @@ if __name__=='__main__':
         threshold, threshold_rev = th
 
         start_time_heun = time.perf_counter()
-        BD_total_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        BD_total_heun, total_distance_heun, total_number_density_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
         end_time_heun = time.perf_counter()
 
         full_time_heun_CDs = end_time_heun - start_time_heun
             
         start_time_euler = time.perf_counter()
-        BD_total_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        BD_total_euler, total_distance_euler, total_number_density_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
         end_time_euler = time.perf_counter()
 
         full_time_euler_CDs = end_time_euler - start_time_euler
@@ -925,21 +966,29 @@ if __name__=='__main__':
             pathcolumn_heun       = BD_total_heun,
             pathcolumn_euler      = BD_total_euler,
             full_columns          = column_reshaped,
+            distanceB_heun        = total_distance_heun,
+            numberdensity_heun    = total_number_density_heun,
+            distanceB_euler       = total_distance_euler,
+            numberdensity_euler   = total_number_density_euler,
             )
             
     inp = input("What do you want to compute? Press N for column densities and G for graphs: ") #NorG
     if inp == 'N':
         all_clouds = input("Do you want to compute for all clouds or a single one? Press A for all or S for single: ") #AorS
         if all_clouds == 'S':
-            one_cloud_N()
+            i = int(input("Enter the cloud number you want to compute: "))
+            one_cloud_N(i)
         elif all_clouds == 'A':
-            column_density_LOS_Bfield_clouds()
+            i = 0
+            while i < num_clouds:
+                one_cloud_N(i)
+                i += 1
     elif inp == 'G':
-        m     = input("Enter number of points: ")
-        d     = input("Enter Number of lines of sight per point: ")
+        m     = int(input("Enter number of points: "))
+        d     = int(input("Enter Number of lines of sight per point: "))
         case  = input("Enter case (ideal/amb): ")
         snap  = input("Enter snapshot number: ")
-        seed  = input("Enter seed number: ")
+        seed  = int(input("Enter seed number: "))
         graphs(m,d,case,snap,seed)
 
 
