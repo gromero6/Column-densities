@@ -229,6 +229,11 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
     volumes   = np.zeros((N+1, total_lines))
     threshold = np.zeros((total_lines,)).astype(int) # one value for each
 
+    # Arrays for distances and number densities (forward and backward)
+    distance_fwd = np.zeros((N, m, d))
+    number_density_fwd = np.zeros((N, m, d))
+    distance_bck = np.zeros((N, m, d))
+    number_density_bck = np.zeros((N, m, d))
 
     line_rev=np.zeros((N+1,total_lines,3)) # from N+1 elements to the double, since it propagates forward and backward
     bfields_rev = np.zeros((N+1,total_lines))
@@ -266,7 +271,17 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         mass_dens = dens * code_units_to_gr_cm3
         pressure *= mass_unit / (length_unit * (time_unit ** 2)) 
         dens_sub *= gr_cm3_to_nuclei_cm3
-        
+
+        # Calculate distances and update arrays
+        distance_traveled = np.linalg.norm(active_x - x[mask], axis=1) * pc_to_cm
+
+       
+        act_ind = np.where(mask.reshape(m,d))
+        # Update distance and number density arrays directly
+        distance_fwd[k][act_ind] = distance_traveled
+        number_density_fwd[k][act_ind] = dens_sub
+
+
         #vol[un_masked] = 0
         print( np.log10(dens[:1]))
         
@@ -276,7 +291,6 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         
         active_vol = vol[still_active_mask]
 
-        # --- START FIX ---
         # Only consider active volumes that are non-zero
         volumes_to_minimize = active_vol[active_vol > 0] 
 
@@ -350,6 +364,14 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         pressure *= mass_unit / (length_unit * (time_unit ** 2)) 
         dens_sub *= gr_cm3_to_nuclei_cm3
 
+        # Calculate distances and update arrays
+        distance_traveled = np.linalg.norm(active_x - x[mask_rev], axis=1) * pc_to_cm
+
+        act_ind_rev = np.where(mask_rev.reshape(m,d))
+        # Update distance and number density arrays directly
+        distance_bck[k][act_ind_rev] = distance_traveled
+        number_density_bck[k][act_ind_rev] = dens_sub
+
         still_active_mask_rev = dens_sub > 100
         
         #vol[un_masked_rev] = 0
@@ -362,7 +384,7 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
         active_vol = vol[still_active_mask_rev]
 
 
-                # --- START FIX ---
+        
         # Only consider active volumes that are non-zero
         volumes_to_minimize_rev = active_vol[active_vol > 0] 
 
@@ -416,12 +438,14 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
     numb_densities = np.append(densities_rev[::-1, :], densities[1:,:], axis=0)
     magnetic_field = np.append(bfields_rev[::-1, :], bfields[1:,:], axis=0)
 
+    numb_densities = numb_densities.reshape(4001, m, d)
+
     trajectory = np.zeros_like(numb_densities)
     column = np.zeros_like(numb_densities)
 
     print("Surviving lines: ", m, "out of: ", max_cycles)
 
-    for _n in range(radius_vector.shape[1]):  # Iterate over the first dimension
+    for _n in range(min(radius_vector.shape[1], trajectory.shape[1])):  # Iterate over the first dimension
         print("Line: ", _n, " Size: ", radius_vector[:, _n, 0].shape)
         prev = radius_vector[0, _n, :]
         trajectory[0, _n] = 0  # Initialize first row
@@ -437,8 +461,10 @@ def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, Voro
             prev = cur  # Store current point as previous point
 
     #trajectory      *= pc_to_cm #* 3.086e+18                                # from Parsec to cm
-
-    return radius_vector, trajectory, numb_densities, [threshold, threshold_rev], column
+    # Combine forward and backward arrays
+    total_distance_LOS = np.concatenate((distance_bck[::-1], distance_fwd), axis=0)
+    total_number_density_LOS = np.concatenate((number_density_bck[::-1], number_density_fwd), axis=0)
+    return radius_vector, trajectory, numb_densities, [threshold, threshold_rev], column, total_distance_LOS, total_number_density_LOS
 
 
 
@@ -475,6 +501,11 @@ def get_B_field_column_density(
     distance_bck = np.zeros((N, max_cycles))
     number_density_bck = np.zeros((N, max_cycles))
 
+    posBheun_fwd = np.zeros((N, max_cycles, 3))
+    posBheun_bck = np.zeros((N, max_cycles, 3))
+    ndBheun_fwd = np.zeros((N, max_cycles))
+    ndBheun_bck = np.zeros((N, max_cycles))
+
 
     for i in range(N):
         if np.any(mask_fwd):
@@ -497,15 +528,23 @@ def get_B_field_column_density(
 
             distance_traveled_fwd = np.linalg.norm(next_fwd - active_fwd, axis=1) * pc_to_cm
 
-            # Update distance and number density arrays
-            distance_fwd[i, mask_fwd] = distance_traveled_fwd
-            number_density_fwd[i, mask_fwd] = local_densities_fwd
 
 
             column_fwd[mask_fwd] += local_densities_fwd * distance_traveled_fwd
             current_fwd[mask_fwd] = next_fwd
-
+            
+            print('shape of active_fwd:', active_fwd.shape)
+            print('shape of mask_fwd:', mask_fwd.shape)
+            print('shape of local_densities_fwd:', local_densities_fwd.shape)
+            print('shape of pos at index i:', posBheun_fwd[i].shape)
+            print('shape of nd at index i:', ndBheun_fwd[i].shape)
+            print('active mask', new_mask_fwd.shape)
+            
+            posBheun_fwd[i,mask_fwd] = active_fwd
+            ndBheun_fwd[i,mask_fwd] = local_densities_fwd
+            
             mask_fwd[mask_fwd] = new_mask_fwd
+
         #backwards
         if np.any(mask_bck):
             
@@ -531,26 +570,22 @@ def get_B_field_column_density(
             distance_traveled_bck = np.linalg.norm(next_bck - active_bck, axis=1) * pc_to_cm
 
 
-            # Update distance and number density arrays
-            distance_bck[i, mask_bck] = distance_traveled_bck
-            number_density_bck[i, mask_bck] = local_densities_bck
-
-
             column_bck[mask_bck] += local_densities_bck * distance_traveled_bck
             current_bck[mask_bck] = next_bck
+
+            posBheun_bck[i,mask_bck] = active_bck
+            ndBheun_bck[i,mask_bck] = local_densities_bck
             
             mask_bck[mask_bck] = new_mask_bck
+
             
         # if both masks false
         if not np.any(mask_fwd) and not np.any(mask_bck):
             break
 
-    # Concatenate forward and backward arrays
-    total_distance_heun = np.concatenate((distance_bck[::-1], distance_fwd), axis=0)
-    total_number_density_heun = np.concatenate((number_density_bck[::-1], number_density_fwd), axis=0)
            
     BDtotal_heun = column_fwd + column_bck
-    return BDtotal_heun, total_distance_heun, total_number_density_heun
+    return BDtotal_heun, posBheun_fwd, ndBheun_fwd, posBheun_bck, ndBheun_bck
 
 def get_B_field_column_density_euler(
     x_init,
@@ -577,11 +612,11 @@ def get_B_field_column_density_euler(
     mask_fwd = np.ones(max_cycles, dtype=bool)
     mask_bck = np.ones(max_cycles, dtype=bool)
 
-    # Initialize arrays to store distance traveled and number density at each step
-    distance_fwd = np.zeros((N, max_cycles))
-    number_density_fwd = np.zeros((N, max_cycles))
-    distance_bck = np.zeros((N, max_cycles))
-    number_density_bck = np.zeros((N, max_cycles))
+
+    posBeuler_fwd = np.zeros((N, max_cycles, 3))
+    posBeuler_bck = np.zeros((N, max_cycles, 3))
+    ndBeuler_fwd = np.zeros((N, max_cycles))
+    ndBeuler_bck = np.zeros((N, max_cycles))
 
 
     for i in range(N):
@@ -605,14 +640,17 @@ def get_B_field_column_density_euler(
 
             distance_traveled_fwd = np.linalg.norm(next_fwd - active_fwd, axis=1) * pc_to_cm
 
-            # Update distance and number density arrays
-            distance_fwd[i, mask_fwd] = distance_traveled_fwd
-            number_density_fwd[i, mask_fwd] = local_densities_fwd
 
             column_fwd[mask_fwd] += local_densities_fwd * distance_traveled_fwd
             current_fwd[mask_fwd] = next_fwd
 
+            posBeuler_fwd[i,mask_fwd] = active_fwd
+            ndBeuler_fwd[i,mask_fwd] = local_densities_fwd
+
             mask_fwd[mask_fwd] = new_mask_fwd
+
+
+
         #backwards
         if np.any(mask_bck):
             
@@ -636,25 +674,72 @@ def get_B_field_column_density_euler(
             )
             
             distance_traveled_bck = np.linalg.norm(next_bck - active_bck, axis=1) * pc_to_cm
-            # Update distance and number density arrays
-            distance_bck[i, mask_bck] = distance_traveled_bck
-            number_density_bck[i, mask_bck] = local_densities_bck
+
            
             column_bck[mask_bck] += local_densities_bck * distance_traveled_bck
             current_bck[mask_bck] = next_bck
+
+            posBeuler_bck[i,mask_bck] = active_bck
+            ndBeuler_bck[i,mask_bck] = local_densities_bck
             
             mask_bck[mask_bck] = new_mask_bck
+
+
             
         # if both masks false
         if not np.any(mask_fwd) and not np.any(mask_bck):
             break
-    # Concatenate forward and backward arrays
-    total_distance_euler = np.concatenate((distance_bck[::-1], distance_fwd), axis=0)
-    total_number_density_euler = np.concatenate((number_density_bck[::-1], number_density_fwd), axis=0)
 
     BDtotal_euler = column_fwd + column_bck
-    return BDtotal_euler, total_distance_euler, total_number_density_euler
- 
+    return BDtotal_euler, posBeuler_fwd, ndBeuler_fwd, posBeuler_bck, ndBeuler_bck
+
+
+def Debug(m,d,case,snap,seed,i,df):
+    import pandas as pd
+    
+    cloud_data   = df.iloc[i]
+    cloud_number = cloud_data["index"]
+    peak_density = cloud_data["Peak_Density"]
+    x = cloud_data["CloudCord_X"]
+    y = cloud_data["CloudCord_Y"]
+    z = cloud_data["CloudCord_Z"]
+
+    data_coordinates = np.load
+    data_directory = os.path.join("thesis_los", case, snap)
+    data_name = f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"
+    full_data_path = os.path.join(data_directory, data_name)
+    if not os.path.exists(full_data_path):
+        print("File not found:", full_data_path)
+        one_cloud_N(i)
+        return Debug(m,d,case,snap,seed,i, df)
+    
+    data = np.load(full_data_path)
+
+    print(data.files)
+
+    x_init  = data['x_init_points']
+    mean_CD = data['mean_column_densities']
+    path_CD_heun = data["pathcolumn_heun"]
+    path_CD_euler = data["pathcolumn_euler"]
+    distance_heun = data["distanceB_heun"]
+    distance_euler = data["distanceB_euler"]
+    number_density_heun = data["numberdensity_heun"]
+    number_density_euler = data["numberdensity_euler"]
+
+
+    final_column_density = mean_CD[-1, :]
+    radial_distance_pc = np.linalg.norm(x_init, axis=1)
+    radial_distance_cm = radial_distance_pc * pc_to_cm
+
+    print("x_init points:", x_init)
+    print("Final Column Densities:", final_column_density)
+    print("Radial Distances (cm):", radial_distance_cm)
+    print('shape of distance heun:', distance_heun.shape)
+    print('shape of number density heun:', number_density_heun.shape)
+    print('shape of distance euler:', distance_euler.shape)
+    print('shape of number density euler:', number_density_euler.shape)
+    print('shape x_init:', x_init.shape)
+
 def NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df):
     import pandas as pd
     from scipy.stats import linregress
@@ -773,6 +858,149 @@ def NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df):
     plt.savefig(full_path2, dpi=300)
     print("plot saved to: ", full_path2)
 
+
+def BeulerheunvsR(m,d,case,snap,seed,i,df):
+    import pandas as pd
+
+    cloud_data   = df.iloc[i]
+    cloud_number = cloud_data["index"]
+    peak_density = cloud_data["Peak_Density"]
+    x = cloud_data["CloudCord_X"]
+    y = cloud_data["CloudCord_Y"]
+    z = cloud_data["CloudCord_Z"]
+
+    data_coordinates = np.load
+    data_directory = os.path.join("thesis_los", case, snap)
+    data_name = f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"
+    full_data_path = os.path.join(data_directory, data_name)
+    if not os.path.exists(full_data_path):
+        print("File not found:", full_data_path)
+        one_cloud_N(i)
+        return BeulerheunvsR(m,d,case,snap,seed,i,df)
+    data = np.load(full_data_path)
+
+
+    x_init  = data['x_init_points']
+    mean_CD = data['mean_column_densities']
+    path_CD_heun = data["pathcolumn_heun"]
+    path_CD_euler = data["pathcolumn_euler"]
+
+    posBheun_fwd = data["posBheun_fwd"]
+    ndBheun_fwd  = data["ndBheun_fwd"]
+    posBheun_bck = data["posBheun_bck"]
+    ndBheun_bck  = data["ndBheun_bck"]
+
+    posBeuler_fwd = data["posBeuler_fwd"]
+    ndBeuler_fwd  = data["ndBeuler_fwd"]
+    posBeuler_bck = data["posBeuler_bck"]
+    ndBeuler_bck  = data["ndBeuler_bck"]
+
+    final_column_density = mean_CD[-1, :]
+    radial_distance_pc = np.linalg.norm(x_init, axis=1)
+    radial_distance_cm = radial_distance_pc * pc_to_cm
+
+
+
+    full_positions_heun = np.concatenate((posBheun_bck[::-1,:,:], posBheun_fwd[1:,:,:]), axis=0)
+    full_densities_heun = np.concatenate((ndBheun_bck[::-1,:], ndBheun_fwd[1:,:]), axis=0)
+    num_steps = full_positions_heun.shape[0]
+    m = full_positions_heun.shape[1]
+
+    centered_positions = np.zeros((num_steps, m, 3))
+
+    arr_total_distance_heun = np.zeros((num_steps, m))
+    print("Number of steps along B field lines (Heun): ", num_steps)
+    print("Number of lines along B field lines (Heun): ", m)
+    print("shape of full positions (Heun): ", full_positions_heun.shape)
+    print("shape of full densities (Heun): ", full_densities_heun.shape)
+    plt.figure()
+    def cent_positions(full_positions_heun):
+        for k in range(m):
+            centered_positions[:, k, :] = full_positions_heun[:, k, :] - full_positions_heun[0, k, :]
+        return centered_positions
+    
+    
+    centered_positions = cent_positions(full_positions_heun)
+    total_distance_heun = np.zeros(m)
+    for i in range(1, num_steps):
+    
+        step_distance = np.linalg.norm(centered_positions[i, :, :] - centered_positions[i-1, :, :], axis=1)
+        total_distance_heun += step_distance
+        arr_total_distance_heun[i, :] = total_distance_heun
+
+    arr_total_distance_heun_cm = arr_total_distance_heun * pc_to_cm
+ 
+
+    full_positions_euler = np.concatenate((posBeuler_bck[::-1,:,:], posBeuler_fwd[1:,:,:]), axis=0)
+    full_densities_euler = np.concatenate((ndBeuler_bck[::-1,:], ndBeuler_fwd[1:,:]), axis=0)
+    num_steps_euler = full_positions_euler.shape[0]
+    m_euler = full_positions_euler.shape[1]
+    print("Number of steps along B field lines (Euler): ", num_steps_euler)
+    print("Number of lines along B field lines (Euler): ", m_euler)
+    print("shape of full positions (Euler): ", full_positions_euler.shape)
+    print("shape of full densities (Euler): ", full_densities_euler.shape)
+
+    centered_positions_euler = np.zeros((num_steps_euler, m_euler, 3))
+    def cent_positions_euler(full_positions_euler):
+        for k in range(m_euler):
+            centered_positions_euler[:, k, :] = full_positions_euler[:, k, :] - full_positions_euler[0, k, :]
+        return centered_positions_euler
+    centered_positions_euler = cent_positions_euler(full_positions_euler)
+    arr_total_distances_euler = np.zeros((num_steps_euler, m_euler))
+
+    total_distance_euler = np.zeros(m_euler)
+    for j in range(1, num_steps_euler):
+        
+        step_distance_euler = np.linalg.norm(centered_positions_euler[j, :, :] - centered_positions_euler[j-1, :, :], axis=1)
+        total_distance_euler += step_distance_euler
+        arr_total_distances_euler[j, :] = total_distance_euler
+    
+    arr_total_distances_euler_cm = arr_total_distances_euler * pc_to_cm
+
+    figure, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+    #indices of the lines that get the highest and lowest column densities
+    mask = np.ones(m, dtype=bool)
+    mask_euler = np.ones(m_euler, dtype=bool)
+    for n in range(m):
+        if all(full_densities_heun[:,n]) < 1000:
+            mask[n] = False
+    for n in range(m_euler):
+        if all(full_densities_euler[:,n]) < 1000:
+            mask_euler[n] = False
+    
+    masked_arr_total_distance_heun_cm = arr_total_distance_heun_cm[:, mask]
+    masked_full_densities_heun = full_densities_heun[:, mask]
+    masked_arr_total_distances_euler_cm = arr_total_distances_euler_cm[:, mask_euler]
+    masked_full_densities_euler = full_densities_euler[:, mask_euler]
+    plt.rc('text', usetex=True)
+    ax1.set_title(f"Column Density along B Field Lines (Heun) - Cloud {int(cloud_number)}")
+    ax1.set_xlabel("Distance along B Field Line (cm)")
+    ax1.set_ylabel("Number Density (cm$^{-3}$)")
+    ax2.set_title(f"Column Density along B Field Lines (Euler) - Cloud {int(cloud_number)}")
+    ax2.set_xlabel("Distance along B Field Line (cm)")
+    ax2.set_ylabel("Number Density (cm$^{-3}$)")
+
+    ax1.grid(True, which="both", ls=":")
+    ax2.grid(True, which="both", ls=":")
+
+
+    print('Want to print all lines? (y/n)')
+    ans = input()
+    if ans.lower() == 'y':
+        for k in range(1, m):  # Plot every 5th line for clarity
+            ax1.plot(arr_total_distance_heun_cm[:, k], full_densities_heun[:, k], alpha=0.3)
+        for k in range(0, m_euler-1, 100):  # Plot every 5th line for clarity
+            ax2.plot(arr_total_distances_euler_cm[:, k], full_densities_euler[:, k], alpha=0.3)
+    else:
+        lineofchoice = int(input("Enter the line number you want to plot: "))
+        ax1.plot(arr_total_distance_heun_cm[:, lineofchoice], full_densities_heun[:, lineofchoice])
+        ax2.plot(arr_total_distances_euler_cm[:, lineofchoice], full_densities_euler[:, lineofchoice])
+                 
+    plt.tight_layout()
+    plt.show()
+
+    
+    
 def graphs(m,d,case,snap,seed):
     folderrvsNheun = os.path.join('graphs', 'rvsNheun')
     if not os.path.exists(folderrvsNheun):
@@ -781,6 +1009,10 @@ def graphs(m,d,case,snap,seed):
     folderrvsNeuler = os.path.join('graphs', 'rvsNeuler')
     if not os.path.exists(folderrvsNeuler):
         os.makedirs(folderrvsNeuler)
+
+    foldercontour = os.path.join('graphs', 'contour_maps')
+    if not os.path.exists(foldercontour):
+        os.makedirs(foldercontour)
 
     r_values_los  = []
     r_values_path = []
@@ -791,7 +1023,7 @@ def graphs(m,d,case,snap,seed):
     df = pd.read_csv(full_cord_path)
 
     
-    gr = input('What do you want to plot?: (1) N vs R for Heun and Euler')
+    gr = input('What do you want to plot?: (1) N vs R for Heun and Euler 2) Contour maps of number density around LOS (3) number density along B field lines for Heun and Euler methods (4) Debugging info ')
     if gr == '1':
         allorone = input('Do you want to plot for (a) all clouds or (b) one cloud? ')
         if allorone.lower() == 'a':
@@ -802,6 +1034,37 @@ def graphs(m,d,case,snap,seed):
         elif allorone.lower() == 'b':
                 i = int(input("Enter the cloud number you want to plot: "))
                 NvsR(m,d,case,snap,seed,i, r_values_los, r_values_path, df)
+    elif gr == '2':
+        allorone = input('Do you want to plot for (a) all clouds or (b) one cloud? ')
+        if allorone.lower() == 'a':
+            i = 0
+            while i < num_clouds:
+                plot_highest_ratio_projection(i, seed, m, d, new_folder)
+                i += 1
+        elif allorone.lower() == 'b':
+            i = int(input("Enter the cloud number you want to plot: "))
+        
+    elif gr == '3':
+        allorone = input('Do you want to plot for (a) all clouds or (b) one cloud? ')
+        if allorone.lower() == 'a':
+            i = 0
+            while i < num_clouds:
+                BeulerheunvsR(m,d,case,snap,seed,i)
+                i += 1
+        elif allorone.lower() == 'b':
+            i = int(input("Enter the cloud number you want to plot: "))
+            BeulerheunvsR(m,d,case,snap,seed,i,df)
+    elif gr == '4':
+        i = int(input("Enter the cloud number you want to plot debugging info for: "))
+        Debug(m,d,case,snap,seed,i,df)
+        
+    print('want to run again? (y/n)')
+    again = input()
+    if again.lower() == 'y':
+        graphs(m,d,case,snap,seed)
+    elif again.lower() == 'n':
+        print('Exiting graphs function.')
+        return
         
 
 
@@ -936,17 +1199,17 @@ if __name__=='__main__':
         print("No. of directions:", directions.shape)
         print('Directions provided by the LOS at points')
 
-        radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
+        radius_vector, trajectory, numb_densities, th, column, total_distance_LOS, total_number_density_LOS = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
         threshold, threshold_rev = th
 
         start_time_heun = time.perf_counter()
-        BD_total_heun, total_distance_heun, total_number_density_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        BD_total_heun, posBheun_fwd, ndBheun_fwd, posBheun_bck, ndBheun_bck = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
         end_time_heun = time.perf_counter()
 
         full_time_heun_CDs = end_time_heun - start_time_heun
             
         start_time_euler = time.perf_counter()
-        BD_total_euler, total_distance_euler, total_number_density_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        BD_total_euler, posBeuler_fwd, ndBeuler_fwd, posBeuler_bck, ndBeuler_bck = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
         end_time_euler = time.perf_counter()
 
         full_time_euler_CDs = end_time_euler - start_time_euler
@@ -966,10 +1229,16 @@ if __name__=='__main__':
             pathcolumn_heun       = BD_total_heun,
             pathcolumn_euler      = BD_total_euler,
             full_columns          = column_reshaped,
-            distanceB_heun        = total_distance_heun,
-            numberdensity_heun    = total_number_density_heun,
-            distanceB_euler       = total_distance_euler,
-            numberdensity_euler   = total_number_density_euler,
+            distance_LOS         = total_distance_LOS,
+            numberdensity_LOS     = total_number_density_LOS,
+            posBheun_fwd         = posBheun_fwd,
+            ndBheun_fwd          = ndBheun_fwd,
+            posBheun_bck         = posBheun_bck,
+            ndBheun_bck          = ndBheun_bck,
+            posBeuler_fwd        = posBeuler_fwd,
+            ndBeuler_fwd         = ndBeuler_fwd,
+            posBeuler_bck        = posBeuler_bck,
+            ndBeuler_bck         = ndBeuler_bck,
             )
             
     inp = input("What do you want to compute? Press N for column densities and G for graphs: ") #NorG
@@ -989,6 +1258,7 @@ if __name__=='__main__':
         case  = input("Enter case (ideal/amb): ")
         snap  = input("Enter snapshot number: ")
         seed  = int(input("Enter seed number: "))
+
         graphs(m,d,case,snap,seed)
 
 
