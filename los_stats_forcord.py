@@ -4,6 +4,9 @@ from scipy import spatial
 import matplotlib.pyplot as plt
 from library import *
 from scipy.spatial import KDTree
+from scipy.spatial.transform import Rotation as R
+import matplotlib.cm as cm
+
 
 start_time = time.time()
 
@@ -46,7 +49,7 @@ def Heun_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume):
     local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos)
     local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1,(3,1)).T #normalize the local fields
     CellVol = Volume[cells] #volume of the cells where the points are located
-    dx *= 0.4*((3/4)*CellVol/np.pi)**(1/3)  #update step size based on cell volume
+    dx *= 0.1*((3/4)*CellVol/np.pi)**(1/3)  #update step size based on cell volume
     x_tilde = x + dx[:, np.newaxis] * local_fields_1 #predictor step
     local_fields_2, abs_local_fields_2, local_densities, cells = find_points_and_get_fields(x_tilde, Bfield, Density, Density_grad, Pos, VoronoiPos) #get fields at predicted position
     local_fields_2 = local_fields_2 / np.tile(abs_local_fields_2,(3,1)).T    #normalize the local fields at predicted position
@@ -69,7 +72,7 @@ def Euler_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume, bd
 
     # Update step size based on cell volume
     CellVol = Volume[cells]
-    dx *= ((3 / 4) * Volume[cells] / np.pi) ** (1 / 3)
+    dx *= 0.1*((3 / 4) * Volume[cells] / np.pi) ** (1 / 3)
 
     # Compute the final position using the Euler method
     x_final = x + dx[:, np.newaxis] * local_fields_1
@@ -206,6 +209,157 @@ def generate_vectors_in_core(max_cycles, densthresh, Pos, rloc=1.0, seed=12345):
     random_indices = np.random.choice(len(valid_vectors), max_cycles, replace=False) 
     return valid_vectors[random_indices] #returns the points in a mixed order
 
+
+def column_density_LOS_Bfield_clouds():
+    full_CD_calculations_time_average = np.zeros((2,num_clouds))
+    full_CD_calculations_time         = np.zeros((2,))
+    for i in range(num_clouds):
+    
+        Pos_copy = Pos.copy()
+        VoronoiPos_copy = VoronoiPos.copy()
+        
+        print("Centering on cloud:", i)
+        print("Coordinates:", cloud_centers[i])
+        
+        # create a copy for each cloud that it doesn't re-center previous coordinates
+        Pos_copy -= cloud_centers[i]
+        VoronoiPos_copy -= cloud_centers[i]
+
+        for dim in range(3):  # Loop over x, y, z
+            pos_from_center = Pos_copy[:, dim]
+            boundary_mask = pos_from_center > Boxsize / 2
+            Pos_copy[boundary_mask, dim] -= Boxsize
+            VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+            
+            boundary_mask = pos_from_center < -Boxsize / 2
+            Pos_copy[boundary_mask, dim] += Boxsize
+            VoronoiPos_copy[boundary_mask, dim] += Boxsize
+        
+        x_init = generate_vectors_in_core(max_cycles, densthresh, Pos_copy, rloc, seed)
+        directions = fibonacci_sphere(nd)
+        m = x_init.shape[0] # number of target points
+        d = directions.shape[0] # number of directions
+        total_lines = m*d
+
+        print(total_lines, "lines of sight generated for all points")
+        print("No. of starting positions:", x_init.shape)
+        print("No. of directions:", directions.shape)
+        print('Directions provided by the LOS at points')
+
+        radius_vector, trajectory, numb_densities, th, column = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
+        threshold, threshold_rev = th
+
+        start_time_heun = time.perf_counter()
+        BD_total_heun = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        end_time_heun = time.perf_counter()
+
+        full_time_heun_CDs = end_time_heun - start_time_heun
+        
+        start_time_euler = time.perf_counter()
+        BD_total_euler = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+        end_time_euler = time.perf_counter()
+
+        full_time_euler_CDs = end_time_euler - start_time_euler
+
+        full_CD_calculations_time[0,i] = full_time_heun_CDs
+        full_CD_calculations_time[1,i] = full_time_euler_CDs
+
+        column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
+        mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
+        np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
+            trajectories          = trajectory,
+            densities             = numb_densities,
+            positions             = radius_vector, 
+            mean_column_densities = mean_column_per_point,
+            x_init_points         = x_init,
+            snapshot_number       = int(num_file),
+            pathcolumn_heun       = BD_total_heun,
+            pathcolumn_euler      = BD_total_euler,
+            full_columns          = column_reshaped,
+            CD_times              = full_CD_calculations_time,
+            )
+        
+    average_time_heun = np.mean(full_CD_calculations_time, axis=0)
+    average_time_euler = np.mean(full_CD_calculations_time, axis=1) 
+
+    print("Average time for full CD calculations Heun: ", average_time_heun)
+    print("Average time for full CD calculations Euler: ", average_time_euler)
+
+
+def one_cloud_N(i):
+    
+    Pos_copy = Pos.copy()
+    VoronoiPos_copy = VoronoiPos.copy()
+        
+    print("Centering on cloud:", i)
+    print("Coordinates:", cloud_centers[i])
+        
+        # create a copy for each cloud that it doesn't re-center previous coordinates
+    Pos_copy -= cloud_centers[i]
+    VoronoiPos_copy -= cloud_centers[i]
+
+    for dim in range(3):  # Loop over x, y, z
+        pos_from_center = Pos_copy[:, dim]
+        boundary_mask = pos_from_center > Boxsize / 2
+        Pos_copy[boundary_mask, dim] -= Boxsize
+        VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+            
+        boundary_mask = pos_from_center < -Boxsize / 2
+        Pos_copy[boundary_mask, dim] += Boxsize
+        VoronoiPos_copy[boundary_mask, dim] += Boxsize
+        
+    x_init = generate_vectors_in_core(max_cycles, densthresh, Pos_copy, rloc, seed)
+    directions = fibonacci_sphere(nd)
+    m = x_init.shape[0] # number of target points
+    d = directions.shape[0] # number of directions
+    total_lines = m*d
+
+    print(total_lines, "lines of sight generated for all points")
+    print("No. of starting positions:", x_init.shape)
+    print("No. of directions:", directions.shape)
+    print('Directions provided by the LOS at points')
+
+    radius_vector, trajectory, numb_densities, th, column, total_distance_LOS, total_number_density_LOS = get_line_of_sight(x_init, directions, Pos=Pos_copy, VoronoiPos=VoronoiPos_copy)
+    threshold, threshold_rev = th
+
+    start_time_heun = time.perf_counter()
+    BD_total_heun, posBheun_fwd, ndBheun_fwd, posBheun_bck, ndBheun_bck = get_B_field_column_density(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+    end_time_heun = time.perf_counter()
+
+    full_time_heun_CDs = end_time_heun - start_time_heun
+        
+    start_time_euler = time.perf_counter()
+    BD_total_euler, posBeuler_fwd, ndBeuler_fwd, posBeuler_bck, ndBeuler_bck = get_B_field_column_density_euler(x_init,Bfield,Density,densthresh,N,max_cycles,Density_grad, Volume, VoronoiPos = VoronoiPos_copy, Pos = Pos_copy)
+    end_time_euler = time.perf_counter()
+
+    full_time_euler_CDs = end_time_euler - start_time_euler
+
+    print(posBheun_fwd.shape)
+    print(posBeuler_fwd.shape)
+
+    column_reshaped = column.reshape(column.shape[0],m,d) #separates the column densities per point, per directions
+    mean_column_per_point = np.mean(column_reshaped, axis= 2) #takes the mean over the directions 
+    np.savez(os.path.join(new_folder, f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"),
+        trajectories          = trajectory,
+        densities             = numb_densities,
+        positions             = radius_vector, 
+        mean_column_densities = mean_column_per_point,
+        x_init_points         = x_init,
+        snapshot_number       = int(num_file),
+        pathcolumn_heun       = BD_total_heun,
+        pathcolumn_euler      = BD_total_euler,
+        full_columns          = column_reshaped,
+        distance_LOS         = total_distance_LOS,
+        numberdensity_LOS     = total_number_density_LOS,
+        posBheun_fwd         = posBheun_fwd,
+        ndBheun_fwd          = ndBheun_fwd,
+        posBheun_bck         = posBheun_bck,
+        ndBheun_bck          = ndBheun_bck,
+        posBeuler_fwd        = posBeuler_fwd,
+        ndBeuler_fwd         = ndBeuler_fwd,
+        posBeuler_bck        = posBeuler_bck,
+        ndBeuler_bck         = ndBeuler_bck,
+        )
 
 def get_line_of_sight(x_init=None, directions=fibonacci_sphere(), Pos=None, VoronoiPos=None):
     """
@@ -972,11 +1126,14 @@ def BeulerheunvsR(m,d,case,snap,seed,i,df):
     masked_full_densities_heun = full_densities_heun[:, mask]
     masked_arr_total_distances_euler_cm = arr_total_distances_euler_cm[:, mask_euler]
     masked_full_densities_euler = full_densities_euler[:, mask_euler]
-    plt.rc('text', usetex=True)
-    ax1.set_title(f"Column Density along B Field Lines (Heun) - Cloud {int(cloud_number)}")
+
+    print('Want to print all lines? (y/n)')
+    ans = input()
+
+    ax1.set_title(f"number density along B Field Lines (Heun) - Cloud {int(cloud_number)}")
     ax1.set_xlabel("Distance along B Field Line (cm)")
     ax1.set_ylabel("Number Density (cm$^{-3}$)")
-    ax2.set_title(f"Column Density along B Field Lines (Euler) - Cloud {int(cloud_number)}")
+    ax2.set_title(f"number density along B Field Lines (Euler) - Cloud {int(cloud_number)}")
     ax2.set_xlabel("Distance along B Field Line (cm)")
     ax2.set_ylabel("Number Density (cm$^{-3}$)")
 
@@ -984,8 +1141,6 @@ def BeulerheunvsR(m,d,case,snap,seed,i,df):
     ax2.grid(True, which="both", ls=":")
 
 
-    print('Want to print all lines? (y/n)')
-    ans = input()
     if ans.lower() == 'y':
         for k in range(1, m):  # Plot every 5th line for clarity
             ax1.plot(arr_total_distance_heun_cm[:, k], full_densities_heun[:, k], alpha=0.3)
@@ -999,8 +1154,12 @@ def BeulerheunvsR(m,d,case,snap,seed,i,df):
     plt.tight_layout()
     plt.show()
 
-    
-    
+    rerun = input(print('1)this graph again 2)stop'))
+    if rerun == '1':
+        BeulerheunvsR(m,d,case,snap,seed,i,df)
+    if rerun == '2':
+        return
+ 
 def graphs(m,d,case,snap,seed):
     folderrvsNheun = os.path.join('graphs', 'rvsNheun')
     if not os.path.exists(folderrvsNheun):
@@ -1023,7 +1182,7 @@ def graphs(m,d,case,snap,seed):
     df = pd.read_csv(full_cord_path)
 
     
-    gr = input('What do you want to plot?: (1) N vs R for Heun and Euler 2) Contour maps of number density around LOS (3) number density along B field lines for Heun and Euler methods (4) Debugging info ')
+    gr = input('What do you want to plot?: (1) N vs R for Heun and Euler 2) Contour maps of number density around LOS (3) number density along B field lines for Heun and Euler methods (4) Debugging info (5) heatmap')
     if gr == '1':
         allorone = input('Do you want to plot for (a) all clouds or (b) one cloud? ')
         if allorone.lower() == 'a':
@@ -1057,15 +1216,256 @@ def graphs(m,d,case,snap,seed):
     elif gr == '4':
         i = int(input("Enter the cloud number you want to plot debugging info for: "))
         Debug(m,d,case,snap,seed,i,df)
+    elif gr == '5':
+        allorone = input('Do you want to plot for (a) all clouds or (b) one cloud? ')
+        if allorone.lower() == 'a':
+            i = 0
+            while i < num_clouds:
+                PlaneOnALOS(m,d,case,snap,seed,i,df)
+                i += 1
+        elif allorone.lower() == 'b':
+            i  = int(input('Enter the cloud number you want to plot: '))
+            PlaneOnALOS(m,d,case,snap,seed,i,df)
         
-    print('want to run again? (y/n)')
-    again = input()
-    if again.lower() == 'y':
-        graphs(m,d,case,snap,seed)
-    elif again.lower() == 'n':
-        print('Exiting graphs function.')
-        return
         
+def PlaneOnALOS(m,d,case,snap,seed,i,df):
+    #first, find which line of sight to use
+    import pandas as pd
+    from scipy.spatial import KDTree
+
+    cloud_data   = df.iloc[i]
+    cloud_number = cloud_data["index"]
+    peak_density = cloud_data["Peak_Density"]
+    x = cloud_data["CloudCord_X"]
+    y = cloud_data["CloudCord_Y"]
+    z = cloud_data["CloudCord_Z"]
+
+    data_coordinates = np.load
+    data_directory = os.path.join("thesis_los", case, snap)
+    data_name = f"DataBundle_MeanCD_andpathD_{seed}_{m}_{d}_{i}.npz"
+    full_data_path = os.path.join(data_directory, data_name)
+    if not os.path.exists(full_data_path):
+        print("File not found:", full_data_path)
+        one_cloud_N(i)
+        return PlaneOnALOS(m,d,case,snap,seed,i,df)
+    data = np.load(full_data_path)
+
+
+    x_init  = data['x_init_points']
+    mean_CD = data['mean_column_densities']
+    path_CD_heun = data["pathcolumn_heun"]
+    path_CD_euler = data["pathcolumn_euler"]
+    trajectories = data['trajectories']
+
+    posBheun_fwd = data["posBheun_fwd"]
+    ndBheun_fwd  = data["ndBheun_fwd"]
+    posBheun_bck = data["posBheun_bck"]
+    ndBheun_bck  = data["ndBheun_bck"]
+
+    posBeuler_fwd = data["posBeuler_fwd"]
+    ndBeuler_fwd  = data["ndBeuler_fwd"]
+    posBeuler_bck = data["posBeuler_bck"]
+    ndBeuler_bck  = data["ndBeuler_bck"]
+    positions = data['positions']
+
+    # CRITICAL: Re-center coordinates for this cloud (same as in one_cloud_N)
+    cloud_center = np.array([x, y, z])
+    Pos_copy = Pos.copy()
+    VoronoiPos_copy = VoronoiPos.copy()
+    
+    Pos_copy -= cloud_center
+    VoronoiPos_copy -= cloud_center
+
+    for dim in range(3):  # Loop over x, y, z
+        pos_from_center = Pos_copy[:, dim]
+        boundary_mask = pos_from_center > Boxsize / 2
+        Pos_copy[boundary_mask, dim] -= Boxsize
+        VoronoiPos_copy[boundary_mask, dim] -= Boxsize
+        
+        boundary_mask = pos_from_center < -Boxsize / 2
+        Pos_copy[boundary_mask, dim] += Boxsize
+        VoronoiPos_copy[boundary_mask, dim] += Boxsize
+
+    # Build KDTree with cloud-centered coordinates
+    tree = KDTree(Pos_copy)
+
+    print("shape of trajectories: ", trajectories.shape)
+    print('Shape of the mean column densities', mean_CD.shape)
+    print('Shape of Bheun arrya', path_CD_heun.shape)
+    #find point with the highest ratio of NLOS vs NBpath
+
+    final_column_density = mean_CD[-1, :]
+    print('shape of inal_N', final_column_density.shape)
+    ratio = final_column_density /path_CD_heun
+    print(ratio.shape)
+
+    highest_ratio_index = np.argmax(ratio)
+
+    point_maxratio = trajectories[:,highest_ratio_index,:]
+    print(point_maxratio.shape)
+
+    reshape_positions = positions.reshape((4001,1000,20,3))
+    positions_point = reshape_positions[:,highest_ratio_index,:,:]
+
+    print(positions.shape)
+    print(reshape_positions.shape)
+
+    # Get the full LOS trajectory (all points along the line of sight)
+    los_trajectory = positions_point[:,3,:]  # Using direction index 3, all points along LOS
+    los_trajectory_length = los_trajectory.shape[0]
+    
+    # Get the x_init point for this LOS (starting point)
+    x_init_point = x_init[highest_ratio_index]  # Already cloud-centered
+    
+    # Get the LOS direction vector (from start to end) for plane construction
+    los_start = los_trajectory[0]  # First point
+    los_end = los_trajectory[-1]   # Last point
+    vectorlos = los_end - los_start
+    los_length = np.linalg.norm(vectorlos)
+    unit_los = vectorlos / los_length if los_length > 0 else np.array([1,0,0])
+    
+    print(f"LOS trajectory has {los_trajectory_length} points")
+    print(f"x_init point (cloud-centered): {x_init_point}")
+    print(f"LOS direction: {unit_los}")
+    print(f"LOS length: {los_length:.3f} pc")
+    
+    # Choose axis to be perpendicular to (default: z-axis for xy plane)
+    # User can change this to [1,0,0] for yz plane or [0,1,0] for xz plane
+    axis_normal = np.array([0, 0, 1])  # z-axis -> xy plane
+    
+    # Calculate two perpendicular vectors in the plane
+    # First, get a vector perpendicular to both the axis and LOS
+    if np.abs(np.dot(unit_los, axis_normal)) > 0.99:
+        # LOS is nearly parallel to axis, use a different reference
+        if np.abs(axis_normal[2]) > 0.9:
+            ref_vec = np.array([1, 0, 0])  # Use x-axis as reference
+        else:
+            ref_vec = np.array([0, 0, 1])  # Use z-axis as reference
+    else:
+        ref_vec = axis_normal
+    
+    # First perpendicular vector: cross product of axis and LOS
+    perp1 = np.cross(axis_normal, unit_los)
+    perp1_norm = np.linalg.norm(perp1)
+    if perp1_norm < 1e-10:
+        # If LOS is parallel to axis, use a different approach
+        perp1 = np.cross(ref_vec, unit_los)
+        perp1_norm = np.linalg.norm(perp1)
+    perp1 = perp1 / perp1_norm if perp1_norm > 1e-10 else np.array([1, 0, 0])
+    
+    # Second perpendicular vector: cross product of LOS and perp1 (ensures orthogonality)
+    perp2 = np.cross(unit_los, perp1)
+    perp2_norm = np.linalg.norm(perp2)
+    perp2 = perp2 / perp2_norm if perp2_norm > 1e-10 else np.array([0, 1, 0])
+    
+    print(f"Perpendicular vector 1: {perp1}")
+    print(f"Perpendicular vector 2: {perp2}")
+    print(f"Dot product (should be ~0): {np.dot(perp1, perp2):.6e}")
+    print(f"Dot product with LOS (should be ~0): {np.dot(perp1, unit_los):.6e}")
+
+    # Determine appropriate grid size based on cloud scale
+    # The LOS extends until density drops below densthresh (100 cm^-3), 
+    # so los_length gives us a sense of cloud extent in that direction.
+    # We'll use a grid that's large enough to show the plane around the LOS.
+    
+    # Use LOS length as a guide, with reasonable bounds
+    # Grid should be at least 2x the LOS length to ensure contours close properly
+    # But also have reasonable min/max bounds
+    grid_size_pc = max(los_length * 2.0, 10.0)  # At least 10 pc, or 2x LOS length for better coverage
+    grid_size_pc = min(grid_size_pc, 30.0)  # Cap at 30 pc to avoid excessive computation
+    
+    # Higher resolution for better contour quality
+    Grid_resolution = 1000  # Good balance between resolution and computation time
+    
+    print(f"LOS length: {los_length:.3f} pc")
+    print(f"Grid size: {grid_size_pc:.3f} pc (2x LOS length, bounded 10-30 pc), Resolution: {Grid_resolution}")
+
+    A1d = np.linspace(-grid_size_pc, grid_size_pc, Grid_resolution)
+    B1d = np.linspace(-grid_size_pc, grid_size_pc, Grid_resolution)
+
+    #create the mesh 2d
+    A_grid, B_grid = np.meshgrid(A1d, B1d)
+
+    # Create plane: use the x_init point as the origin of the plane
+    los_point = x_init_point  # This is already cloud-centered
+    
+    # Build the plane using the two perpendicular vectors
+    A_component = A_grid[:,:, np.newaxis] * perp1
+    B_component = B_grid[:,:, np.newaxis] * perp2
+
+    Q_3d = los_point + A_component + B_component
+
+    Q_query_points = Q_3d.reshape(-1,3)
+
+    print(f"Query points range: X=[{Q_query_points[:,0].min():.3f}, {Q_query_points[:,0].max():.3f}] pc")
+    print(f"Query points range: Y=[{Q_query_points[:,1].min():.3f}, {Q_query_points[:,1].max():.3f}] pc")
+    print(f"Query points range: Z=[{Q_query_points[:,2].min():.3f}, {Q_query_points[:,2].max():.3f}] pc")
+
+    # Query using cloud-centered coordinates
+    distances, indices = tree.query(Q_query_points, k=1)
+    print(f"Nearest neighbor distances: min={distances.min():.6f} pc, max={distances.max():.6f} pc, mean={distances.mean():.6f} pc")
+
+    # Get densities at query points (positions are in parsecs, not cm!)
+    _, _, dens, _ = find_points_and_get_fields(
+       Q_query_points, Bfield, Density, Density_grad, Pos_copy, VoronoiPos_copy
+    )
+
+    print(f"Raw Density Range: [{dens.min():.3e}, {dens.max():.3e}] g/cm³")
+    dens *= gr_cm3_to_nuclei_cm3 
+    print(f"Scaled Density Range: [{dens.min():.3e}, {dens.max():.3e}] cm⁻³")
+
+    dens_grid = dens.reshape(Grid_resolution, Grid_resolution)
+
+    masked_data = np.ma.masked_equal(dens_grid, dens_grid<100)
+    # Check which contour levels are actually present in the data
+    contour_levels = [100]  # cm^-3
+    #valid_levels = [level for level in contour_levels if dens.min() <= level <= dens.max()]
+    #if len(valid_levels) < len(contour_levels):
+    #    print(f"Warning: Some contour levels not in data range. Using: {valid_levels}")
+    #    if len(valid_levels) == 0:
+    #        # If no levels are valid, use some levels within the range
+     #       valid_levels = np.logspace(np.log10(max(dens.min(), 1)), np.log10(dens.max()), 5)
+     #       print(f"Using auto-generated levels: {valid_levels}")
+    
+    # For pcolormesh, we need to handle the grid properly
+    # Create coordinate arrays for pcolormesh (one element larger)
+    A_edges = np.linspace(-grid_size_pc, grid_size_pc, Grid_resolution + 1)
+    B_edges = np.linspace(-grid_size_pc, grid_size_pc, Grid_resolution + 1)
+    A_grid_edges, B_grid_edges = np.meshgrid(A_edges, B_edges)
+
+
+    
+    plt.figure(figsize=(12,10))
+
+    im = plt.pcolormesh(A_grid_edges, B_grid_edges, dens_grid, shading='auto', cmap='viridis')
+    plt.colorbar(im, label='Number Density (cm⁻³)')
+    
+    # Add contour lines at specified densities
+    #if len(valid_levels) > 0:
+    #    contours = plt.contour(A_grid, B_grid, dens_grid, levels=valid_levels, 
+    #                          colors='white', linewidths=1.0, alpha=0.9)
+    #   plt.clabel(contours, inline=True, fontsize=11, fmt='%d cm⁻³')
+    # Add contour lines at specified densities
+   
+    contours = plt.contour(A_grid, B_grid, dens_grid, levels=contour_levels, colors='white', linewidths=1.0, alpha=0.9)
+    plt.clabel(contours, inline=True, fontsize=11, fmt='%d cm⁻³')
+
+    
+    # Mark the x_init point (which is at the origin of the plane coordinates)
+    plt.plot(0.0, 0.0, 'ro', markersize=10, label='x_init point', zorder=5, markeredgecolor='white', markeredgewidth=2)
+    
+    plt.xlabel('x (pc)', fontsize=12)
+    plt.ylabel('y (pc)', fontsize=12)
+    plt.title(f'Number Density Map on Plane - Cloud {int(cloud_number)}', fontsize=14)
+    plt.legend(loc='best', fontsize=11)
+    plt.axis('equal')  # Make aspect ratio equal for better visualization
+    plt.grid(True, alpha=0.3, linestyle='--')
+    
+    plt.tight_layout()
+    plt.show()
+
+    
+
 
 
 print("Simulation Parameters:")
@@ -1213,6 +1613,9 @@ if __name__=='__main__':
         end_time_euler = time.perf_counter()
 
         full_time_euler_CDs = end_time_euler - start_time_euler
+
+        print(posBheun_fwd.shape)
+        print(posBeuler_fwd.shape)
 
         
 
