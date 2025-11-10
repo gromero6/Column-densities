@@ -1501,25 +1501,23 @@ def PlaneOnALOS(m,d,case,snap,seed,i,df):
     print(f"LOS direction: {unit_los}")
     print(f"LOS length: {los_length:.3f} pc")
     
-    # Choose axis to be perpendicular to (default: z-axis for xy plane)
-    # User can change this to [1,0,0] for yz plane or [0,1,0] for xz plane
+
     axis_normal = np.array([0, 0, 1]) 
     
-    # Calculate two perpendicular vectors in the plane
-    # First, get a vector perpendicular to both the axis and LOS
+
     if np.abs(np.dot(unit_los, axis_normal)) > 0.99:
-        # if LOS is nearly parallel to axis, use a different reference
+ 
         if np.abs(axis_normal[2]) > 0.9:
-            ref_vec = np.array([1, 0, 0])  # Use x-axis as reference
+            ref_vec = np.array([1, 0, 0]) 
         else:
-            ref_vec = np.array([0, 0, 1])  # Use z-axis as reference
+            ref_vec = np.array([0, 0, 1])  
     else:
         ref_vec = axis_normal
     
     perp1 = np.cross(axis_normal, unit_los)
     perp1_norm = np.linalg.norm(perp1)
     if perp1_norm < 1e-10:
-        # If LOS is parallel to axis, use a different approach
+    
         perp1 = np.cross(ref_vec, unit_los)
         perp1_norm = np.linalg.norm(perp1)
     perp1 = perp1 / perp1_norm if perp1_norm > 1e-10 else np.array([1, 0, 0])
@@ -1533,8 +1531,7 @@ def PlaneOnALOS(m,d,case,snap,seed,i,df):
     print(f"Dot product (should be ~0): {np.dot(perp1, perp2):.6e}")
     print(f"Dot product with LOS (should be ~0): {np.dot(perp1, unit_los):.6e}")
 
-    # Determine appropriate grid size based on cloud scale
-    # The LOS extends until density drops below densthresh (100 cm^-3), 
+
     
     # Use LOS length 
     grid_size_pc = max(los_length * 2, 5)  # At least 10 pc, or 2x LOS length for better coverage
@@ -1587,15 +1584,6 @@ def PlaneOnALOS(m,d,case,snap,seed,i,df):
     masked_data = ma.masked_where(dens_grid<100, dens_grid)
 
 
-    # Check which contour levels are actually present in the data
-    contour_levels = [100]  # cm^-3
-    #valid_levels = [level for level in contour_levels if dens.min() <= level <= dens.max()]
-    #if len(valid_levels) < len(contour_levels):
-    #    print(f"Warning: Some contour levels not in data range. Using: {valid_levels}")
-    #    if len(valid_levels) == 0:
-    #        # If no levels are valid, use some levels within the range
-     #       valid_levels = np.logspace(np.log10(max(dens.min(), 1)), np.log10(dens.max()), 5)
-     #       print(f"Using auto-generated levels: {valid_levels}")
     
     # For pcolormesh, we need to handle the grid properly
     # Create coordinate arrays for pcolormesh (one element larger)
