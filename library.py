@@ -5,6 +5,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from scipy import spatial
 from scipy.spatial import distance
+from scipy.spatial import KDTree
 
 """ Toggle Parameters """
 
@@ -14,8 +15,8 @@ hydrogen_mass = 1.6735e-24 # gr
 
 # Unit Conversions
 km_to_parsec = 1 / 3.085677581e13  # 1 pc in km
-pc_to_cm = 3.086 * 10e+18  # cm per parsec
-AU_to_cm = 1.496 * 10e+13  # cm per AU
+pc_to_cm = 3.086e+18  # cm per parsec
+AU_to_cm = 1.496e+13  # cm per AU
 parsec_to_cm3 = 3.086e+18  # cm per parsec
 
 # Physical Constants
@@ -63,7 +64,7 @@ _cached_pos = None
 def find_points_and_relative_positions(x, Pos, VoronoiPos):
     global _cached_tree, _cached_pos
     if _cached_tree is None or not np.array_equal(Pos, _cached_pos):
-        _cached_tree = cKDTree(Pos)
+        _cached_tree = KDTree(Pos)
         _cached_pos  = Pos.copy()
     
     dist, cells = _cached_tree.query(x, k=1, workers =- 1)
@@ -111,6 +112,7 @@ def Euler_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume, bd
 
     # Update the magnetic field direction 
     bdirection = local_fields_1
+
 
     return x_final, abs_local_fields_1, local_densities, CellVol
 
