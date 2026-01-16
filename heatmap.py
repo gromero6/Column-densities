@@ -6,18 +6,18 @@ from library import *
 from stats import *
 
 if len(sys.argv) > 6:
-    case     = sys.argv[1]
-    snapshot = sys.argv[2]
-    m        = sys.argv[3]
-    d        = sys.argv[4]
-    cloudnum = sys.argv[5]
-    seed     = sys.argv[6]
+    case     = str(sys.argv[1])
+    snapshot = str(sys.argv[2])
+    m        = str(sys.argv[3])
+    d        = str(sys.argv[4])
+    cloudnum = str(sys.argv[5])
+    seed     = str(sys.argv[6])
 else:
     case = 'ideal'
     snapshot = '430'
     m = '1000'
     d = '20'
-    cloudnum = '3'
+    cloudnum = '0'
     seed = '12345'
 
 data = Codedata(case, snapshot, m, d, cloudnum, seed)
@@ -120,7 +120,7 @@ R_forward = np.array([
 grid_size_pc = max(los_length * 2, 2)  # At least 10 pc, or 2x LOS length for better coverage
 grid_size_pc = min(grid_size_pc, 10.0)  # Cap at 30 pc to avoid excessive computation
 
-Grid_resolution = 2500
+Grid_resolution = 5000
 
 
 print(f"LOS length: {los_length:.3f} pc")
@@ -201,6 +201,7 @@ vectorlos_plane = R_forward @ vectorlos
 # Mark the x_init point (which is at the origin of the plane coordinates)
 plt.plot(0.0, 0.0, 'ro', markersize=10, label='x_init point', zorder=5, markeredgecolor='white', markeredgewidth=2)
 # Plot the line of sight path
+plt.plot(vectorlos_plane[0], vectorlos_plane[1], label='line of sight', linewidth=2, zorder=10)
 
 
 plt.xlabel('x (pc)', fontsize=12)

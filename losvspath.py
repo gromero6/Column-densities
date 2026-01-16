@@ -18,7 +18,7 @@ full_cord_path = os.path.join(coordirec, cornames)
 df = pd.read_csv(full_cord_path)
 
 i = 0
-while i <16:
+while i <20:
 
     cloud_data   = df.iloc[i]
     cloud_number = cloud_data["index"]

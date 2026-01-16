@@ -67,7 +67,9 @@ def find_points_and_relative_positions(x, Pos, VoronoiPos):
         _cached_tree = KDTree(Pos)
         _cached_pos  = Pos.copy()
     
+    x = np.atleast_2d(x)
     dist, cells = _cached_tree.query(x, k=1, workers =- 1)
+    cells = np.atleast_1d(cells)
     rel_pos = VoronoiPos[cells] - x
     return dist, cells, rel_pos
 
@@ -80,6 +82,7 @@ def find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos
 	
 def Heun_step(x, dx, Bfield, Density, Density_grad, Pos, VoronoiPos, Volume, bdirection = None):
     local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(x, Bfield, Density, Density_grad, Pos, VoronoiPos)
+    
     local_fields_1 = local_fields_1 / np.tile(abs_local_fields_1,(3,1)).T #normalize the local fields
     CellVol = Volume[cells]
     dx *= ((3/4)*Volume[cells]/np.pi)**(1/3)  #update step size based on cell volume
