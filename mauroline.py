@@ -3,7 +3,7 @@ import os, sys
 import pandas as pd
 from load_data import Codedata
 from snap_data import snap_data
-from library import find_points_and_get_fields, Heun_step
+from library import find_points_and_get_fields, Heun_step, Euler_step
 from library import *
 
 
@@ -15,6 +15,12 @@ m_use = 1  # number of points from DataBundle
 N_max = 5000  # max steps per direction
 DENSITY_THRESHOLD = 100.0 # Define the threshold
 
+integrationmethod = input("euler or heun?").lower()
+
+if integrationmethod == "heun":
+    integration = Heun_step
+elif integrationmethod == "euler":
+    integration = Euler_step
 
 simulation = snap_data(snapshot, case, str(cloudnum))
 data = Codedata(case, snapshot, m=1000, d=20, cloudnum=cloudnum, seed=seed) # Generate more points initially
@@ -92,7 +98,7 @@ for step in range(1, N_max):
     active_pos = current[active_indices]
 
     # Heun step: moves the point
-    next_pos, _, n_new_mass, _ = Heun_step(
+    next_pos, _, n_new_mass, _ = integration(
         active_pos, np.ones(len(active_pos)), simulation.Bfield, simulation.Density,
         simulation.Density_grad, Pos, VoronoiPos, simulation.Volume
     )
@@ -146,7 +152,7 @@ for step in range(1, N_max):
     active_pos = current[active_indices]
 
 
-    next_pos, _, n_new_mass, _ = Heun_step(
+    next_pos, _, n_new_mass, _ = integration(
         active_pos, -np.ones(len(active_pos)), simulation.Bfield, simulation.Density,
         simulation.Density_grad, Pos, VoronoiPos, simulation.Volume
     )
@@ -173,7 +179,6 @@ else:
     step_bck = N_max + 1
 
 
-# Slice arrays based on the step counts before the break/end
 
 slice_fwd = min(step_fwd, N_max) 
 slice_bck = min(step_bck, N_max)
@@ -207,7 +212,7 @@ for i in range(m_use):
 output_dir = os.path.join("thesis_los", case, snapshot)
 os.makedirs(output_dir, exist_ok=True)
 np.savez_compressed(
-    os.path.join(output_dir, f"FieldLines_cloud{cloudnum}_m{m_use}_seed{seed}.npz"),
+    os.path.join(output_dir, f"FieldLines_cloud{cloudnum}_m{m_use}_seed{seed}_{integrationmethod}.npz"),
     seed_points=x_init,
     positions=pos_full,
     B_fields=b_full,
