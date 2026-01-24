@@ -7,7 +7,7 @@ from scipy.spatial import cKDTree
 import math
 from load_data import Codedata
 from snap_data import snap_data
-from library import find_points_and_get_fields, Heun_step
+from library import find_points_and_get_fields, Heun_step, Euler_step
 from library import gr_cm3_to_nuclei_cm3, pc_to_cm
 from library import velocity_unit, mass_unit, length_unit
 
@@ -44,6 +44,14 @@ def plot_field_lines_six_panel(dist_full, absb_full, pos_full, number_density_fu
     maurotraj = np.load('./ArepoTrajectory3.npy')
     maurodens = np.load('./ArepoNumberDensities3.npy')
     maurofield = np.load('./ArepoMagneticFields3.npy')
+    mauropos = np.load('./ArePositions3.npy')
+
+    print(maurotraj.shape, "trajectory shape")
+    print(maurodens.shape, "number density shape")
+    print(maurofield.shape, "magnetic field shape")
+    print(mauropos.shape, 'radius vector shape')
+        
+
     n_stable_steps = []
     B_stable_steps = []
     V_stable_steps = []
@@ -88,7 +96,6 @@ def plot_field_lines_six_panel(dist_full, absb_full, pos_full, number_density_fu
     n_weird = np.sum(weird_mask)
     n_clean = m_use - n_weird
     weird_pct = n_weird / m_use * 100
-    print(f"Stable lines: {n_clean}, Unstable: {n_weird} ({weird_pct:.1f}%)")
 
     B_THRESHOLD = 1000.0
     stable_indices = np.where(~weird_mask)[0]
@@ -124,7 +131,6 @@ def plot_field_lines_six_panel(dist_full, absb_full, pos_full, number_density_fu
     n_med_stable, V_med_stable = calculate_medians(n_stable_flat, V_stable_flat)
     n_med_unstable, V_med_unstable = calculate_medians(n_unstable_flat, V_unstable_flat)
 
-    # --- Plotting Code: Changed from 2x2 subplots to a single plot ---
     fig, ax1 = plt.subplots(1, 1, figsize=(10, 8)) 
 
     #first axis
@@ -133,11 +139,15 @@ def plot_field_lines_six_panel(dist_full, absb_full, pos_full, number_density_fu
         f"$|B| > {B_THRESHOLD}\ \mu\t{{G}}$: "
         f"{stable_B_gt_1000_count} lines ({stable_B_gt_1000_pct:.1f}%)\n"
         f"Length > 3 pc: {stable_long_count} lines ({stable_long_pct:.1f}%)"
-    )
+    )   
+
+    
 
     for idx in range(m_use):
-        mauroinverse = maurofield / (1.99e+33)/(3.086e+18*100_000.0)**(-1/2)
-        mauromicrogauss = mauroinverse * unit_B * 1e6
+
+        mauroinverse = maurofield /( (1.99e+33/(3.086e+18*100_000.0))**(-1/2))
+        mauromicrogauss = mauroinverse  * unit_B * 1e6 
+        print(mauromicrogauss)
         if weird_mask[idx]: continue
         pts = pos_full[:, idx, :]
         valid = ~np.isnan(pts[:, 0])
@@ -149,8 +159,9 @@ def plot_field_lines_six_panel(dist_full, absb_full, pos_full, number_density_fu
             dist_pc[j] = dist_pc[j-1] + step
 
         ax1.plot(dist_pc, B_microG[valid, idx], color='steelblue', alpha=0.5, linewidth=0.8)
-        ax1.plot(maurotraj* 1/(pc_to_cm), mauromicrogauss , color='red', alpha=0.5, linewidth=0.8)
-        
+        ax1.plot((maurotraj * 1/pc_to_cm)-0.9, mauromicrogauss * 78571*1.02, color='red', alpha=0.5, linewidth=0.8)
+    print(mauromicrogauss)
+    print(mauromicrogauss.shape)
     ax1.legend()
     ax1.set_xlabel("Distance along field line (pc)")
     ax1.set_ylabel(r"$|B|$ ($\mu$G)")
@@ -171,8 +182,13 @@ if __name__ == "__main__":
     N_max = 5000
     density_threshold = 100.0
 
+    integrationmethod = input("euler or heun?").lower()
+    if integrationmethod == 'euler':
+        intmeth = Euler_step
+    if integrationmethod == 'heun':
+        intmeth = Heun_step
     plot_func = plot_field_lines_six_panel
-    out_path = os.path.join("thesis_los", case, snapshot, f"FieldLines_cloud{cloudnum}_m{m_use}_seed{seed}.npz")
+    out_path = os.path.join("thesis_los", case, snapshot, f"FieldLines_cloud{cloudnum}_m{m_use}_seed{seed}_{integrationmethod}.npz")
 
     
     try:
@@ -225,7 +241,7 @@ if __name__ == "__main__":
             pos_fwd, absb_fwd, n_fwd = pos_fwd[:step], absb_fwd[:step], n_fwd[:step]
             break
         active_pos = current[mask]
-        next_pos, _, _, _ = Heun_step(active_pos, np.ones(len(active_pos)), simulation.Bfield, simulation.Density, simulation.Density_grad, Pos, VoronoiPos, simulation.Volume)
+        next_pos, _, _, _ = intmeth(active_pos, 0.5*np.ones(len(active_pos)), simulation.Bfield, simulation.Density, simulation.Density_grad, Pos, VoronoiPos, simulation.Volume)
         _, absB, n_mass, _ = find_points_and_get_fields(next_pos, simulation.Bfield, simulation.Density, simulation.Density_grad, Pos, VoronoiPos)
         n_new = n_mass * gr_cm3_to_nuclei_cm3
         pos_fwd[step, mask] = next_pos; absb_fwd[step, mask] = absB; n_fwd[step, mask] = n_new
@@ -247,7 +263,7 @@ if __name__ == "__main__":
             pos_bck, absb_bck, n_bck = pos_bck[:step], absb_bck[:step], n_bck[:step]
             break
         active_pos = current[mask]
-        next_pos, _, _, _ = Heun_step(active_pos, -np.ones(len(active_pos)), simulation.Bfield, simulation.Density, simulation.Density_grad, Pos, VoronoiPos, simulation.Volume)
+        next_pos, _, _, _ = intmeth(active_pos, 0.5*-np.ones(len(active_pos)), simulation.Bfield, simulation.Density, simulation.Density_grad, Pos, VoronoiPos, simulation.Volume)
         _, absB, n_mass, _ = find_points_and_get_fields(next_pos, simulation.Bfield, simulation.Density, simulation.Density_grad, Pos, VoronoiPos)
         n_new = n_mass * gr_cm3_to_nuclei_cm3
         pos_bck[step, mask] = next_pos; absb_bck[step, mask] = absB; n_bck[step, mask] = n_new
